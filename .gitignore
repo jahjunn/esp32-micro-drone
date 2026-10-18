@@ -21,3 +21,6 @@ build/
 .DS_Store
 Thumbs.db
 desktop.ini
+
+# IDE / 助手元数据
+.codebuddy/
