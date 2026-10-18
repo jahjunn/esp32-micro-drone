@@ -1,0 +1,23 @@
+# PlatformIO
+.pio/
+.pioenvs/
+.piolibdeps/
+.vscode/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+
+# 构建产物
+build/
+*.o
+*.elf
+*.bin
+*.hex
+*.map
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
