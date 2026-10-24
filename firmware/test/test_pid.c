@@ -14,7 +14,7 @@ int main() {
     float target_angle  = 0.0f;   // 飞控的目标是让飞机保持 0 度水平
     float dt = 0.01f;             // 模拟控制循环每 10 毫秒（0.01秒）计算一次
 
-    printf("================ PID 算法仿真验证 ================\n");
+    printf("================ PID Simulation Test ================\n");
 
     // 5. 用一个 for 循环模拟飞控连续运转 15 拍（即 0.15 秒内的控制过程）
     for (int step = 1; step <= 15; step++) {

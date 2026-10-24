@@ -22,5 +22,6 @@ build/
 Thumbs.db
 desktop.ini
 
-# IDE / 助手元数据
-.codebuddy/
+
+# 忽略.exe文件
+*.exe
