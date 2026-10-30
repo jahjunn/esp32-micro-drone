@@ -79,7 +79,7 @@
 | P1 硬件 | 🟡 板框 v8 已有，**电机位待改配 8520** |
 | P2 软件环境 | 🟡 `platformio.ini`（N16R8）、`firmware/` 基础骨架与桌面单测环境已就绪 |
 | P3 驱动层 | 🟡 `qmc5883p` 磁力计驱动已实现；其余外设驱动待开始 |
-| P4 算法+单测 | 🟡 基础类型 `types.h`、二阶低通滤波 `biquad_lpf.h`、PID `pid.h`、Quad-X 混控 `mixer.h` 及桌面单测已完成 |
+| P4 算法+单测 | 🟡 基础类型 `types.h`、二阶低通滤波 `biquad_lpf.h`、Mahony 姿态解算 `mahony.h`、PID `pid.h`、Quad-X 混控 `mixer.h` 及桌面单测已完成 |
 | P5–P9 | ⬜ 未开始 |
 
 详见 `docs/WORKPLAN.md`。
