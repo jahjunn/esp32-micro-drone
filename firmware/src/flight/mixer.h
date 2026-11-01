@@ -38,25 +38,67 @@ static inline float clampf(float v, float lo, float hi) {
     return v;
 }
 
+// 保均值抗饱和函数（借鉴 CF-Drone 的 Desaturation 算法）
+// 作用：当某个电机超出 [0.0, 1.0] 时，保持 4 个电机的平均总推力不变，
+//       等比例缩放各电机相对于平均值的偏差，防止大油门打杆时飞机掉高
+static inline void mixer_desaturate(MotorOutput_t *out) {
+    // 1. 算出当前 4 个电机的平均推力（并确保平均值本身在 0.0 ~ 1.0 之间）
+    float avg = clampf((out->m1 + out->m2 + out->m3 + out->m4) * 0.25f, 0.0f, 1.0f);
+
+    // 2. 找出 4 个电机里的最大值 max_v 和最小值 min_v
+    float max_v = out->m1;
+    if (out->m2 > max_v) max_v = out->m2;
+    if (out->m3 > max_v) max_v = out->m3;
+    if (out->m4 > max_v) max_v = out->m4;
+
+    float min_v = out->m1;
+    if (out->m2 < min_v) min_v = out->m2;
+    if (out->m3 < min_v) min_v = out->m3;
+    if (out->m4 < min_v) min_v = out->m4;
+
+    // 3. 计算等比例压缩系数 scale（默认 1.0 代表没超限，不需要压缩）
+    float scale = 1.0f;
+
+    // 如果最大值冲破了上限 1.0，计算需要把向上的偏差压缩多少倍
+    if (max_v > 1.0f && max_v > avg) {
+        float s_high = (1.0f - avg) / (max_v - avg);
+        if (s_high < scale) scale = s_high;
+    }
+
+    // 如果最小值跌破了下限 0.0，计算需要把向下的偏差压缩多少倍
+    if (min_v < 0.0f && avg > min_v) {
+        float s_low = avg / (avg - min_v);
+        if (s_low < scale) scale = s_low;
+    }
+
+    // 4. 如果发生了超限（scale < 1.0），围绕平均推力 avg 等比缩放 4 个电机
+    if (scale < 1.0f) {
+        out->m1 = avg + (out->m1 - avg) * scale;
+        out->m2 = avg + (out->m2 - avg) * scale;
+        out->m3 = avg + (out->m3 - avg) * scale;
+        out->m4 = avg + (out->m4 - avg) * scale;
+    }
+
+    // 5. 最后用 clampf 兜底消除极微小的浮点数舍入误差
+    out->m1 = clampf(out->m1, 0.0f, 1.0f);
+    out->m2 = clampf(out->m2, 0.0f, 1.0f);
+    out->m3 = clampf(out->m3, 0.0f, 1.0f);
+    out->m4 = clampf(out->m4, 0.0f, 1.0f);
+}
+
 // Quad-X 混控函数
-// 输入：
-//   throttle —— 油门，范围 0.0 ~ 1.0
-//   roll     —— 横滚修正量（来自 roll 轴 PID）
-//   pitch    —— 俯仰修正量（来自 pitch 轴 PID）
-//   yaw      —— 偏航修正量（来自 yaw 轴 PID）
-// 输出：
-//   out      —— 4 个电机的占空比，范围 0.0 ~ 1.0
-//
-// 注意：符号约定以实机验证为准。
-// 如果装机后发现某个轴纠偏方向反了，把该修正量整体取反即可。
 static inline void mixer_quad_x(float throttle, float roll, float pitch, float yaw,
                                 MotorOutput_t *out) {
+    // 1. 先按线性混控公式算出未截断的原始分配值
     // M1 右前 (CCW)：roll 加、pitch 减、yaw 加
-    out->m1 = clampf(throttle - pitch + roll + yaw, 0.0f, 1.0f);
+    out->m1 = throttle - pitch + roll + yaw;
     // M2 右后 (CW)：roll 加、pitch 加、yaw 减
-    out->m2 = clampf(throttle + pitch + roll - yaw, 0.0f, 1.0f);
+    out->m2 = throttle + pitch + roll - yaw;
     // M3 左后 (CCW)：roll 减、pitch 加、yaw 加
-    out->m3 = clampf(throttle + pitch - roll + yaw, 0.0f, 1.0f);
+    out->m3 = throttle + pitch - roll + yaw;
     // M4 左前 (CW)：roll 减、pitch 减、yaw 减
-    out->m4 = clampf(throttle - pitch - roll - yaw, 0.0f, 1.0f);
+    out->m4 = throttle - pitch - roll - yaw;
+
+    // 2. 进行保均值抗饱和处理（防止单边饱和导致掉高）
+    mixer_desaturate(out);
 }
