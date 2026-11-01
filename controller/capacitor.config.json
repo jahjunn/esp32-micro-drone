@@ -1,0 +1,8 @@
+{
+  "appId": "com.lightweightuav.controller",
+  "appName": "UAV Controller",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}

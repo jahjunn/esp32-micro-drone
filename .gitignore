@@ -9,19 +9,28 @@ __pycache__/
 *.py[cod]
 .venv/
 
-# 构建产物
+# Node / Web Controller (Vite & Capacitor)
+node_modules/
+dist/
+controller/android/
+controller/ios/
+*.log
+
+# 构建产物与桌面单测输出
 build/
+output/
+**/output/
 *.o
 *.elf
 *.bin
 *.hex
 *.map
+*.exe
 
 # 系统
 .DS_Store
 Thumbs.db
 desktop.ini
 
-
-# 忽略.exe文件
-*.exe
+# IDE / 助手元数据
+.codebuddy/

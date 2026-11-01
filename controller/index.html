@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b111e" />
+  <title>UAV-ESP32S3 低延迟蓝牙地面站与手柄 (Mode 2)</title>
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app" class="cockpit-shell">
+    <!-- ==================== 顶部战术状态栏 (Top HUD Bar) ==================== -->
+    <header class="hud-topbar">
+      <div class="brand-group">
+        <span class="status-dot" id="conn-dot"></span>
+        <div>
+          <div class="brand-title">UAV-ESP32S3 <span class="badge-ble">BLE 50Hz</span></div>
+          <div class="conn-sub" id="conn-label">未连接 (点击右侧连接或仿真)</div>
+        </div>
+      </div>
+
+      <!-- 飞控安全状态徽章 (对齐 safety.h FlightState_t) -->
+      <div class="state-pill state-locked" id="flight-state-pill">
+        LOCKED (已上锁)
+      </div>
+
+      <!-- 核心遥测指标：1S 电池电压、发包频率、控制环耗时 -->
+      <div class="metrics-group">
+        <div class="metric-box" id="vbat-box">
+          <span class="metric-label">1S VBAT</span>
+          <span class="metric-val" id="vbat-val">--.- V</span>
+        </div>
+        <div class="metric-box">
+          <span class="metric-label">TX RATE</span>
+          <span class="metric-val" id="tx-hz-val">0 Hz</span>
+        </div>
+        <div class="metric-box hide-sm">
+          <span class="metric-label">CORE1 LOOP</span>
+          <span class="metric-val" id="loop-us-val">--- us</span>
+        </div>
+      </div>
+
+      <!-- 连接与全屏醒目红色急停按钮 -->
+      <div class="top-actions">
+        <button id="btn-ble-connect" class="btn btn-primary" type="button">连接 BLE 飞控</button>
+        <button id="btn-sim-toggle" class="btn btn-secondary" type="button">离线仿真闭环</button>
+        <button id="btn-kill" class="btn btn-kill" type="button">急停 KILL</button>
+      </div>
+    </header>
+
+    <!-- ==================== 主操控舱：左摇杆 + 中央仪表台 + 右摇杆 ==================== -->
+    <main class="cockpit-main">
+      <!-- 左摇杆区：美国手 Mode 2（纵向油门不回中 + 横向偏航回中） -->
+      <section class="stick-panel">
+        <div class="stick-header">
+          <span>LEFT: THROTTLE / YAW</span>
+          <button id="btn-zero-thr" class="btn-mini" type="button">油门归零</button>
+        </div>
+        <div class="stick-zone stick-zone-throttle" id="stick-left-zone">
+          <div class="crosshair-h"></div>
+          <div class="crosshair-v"></div>
+          <div class="hover-line" title="1S 悬停参考油门线 (~50%)"></div>
+          <div class="stick-knob" id="stick-left-knob"></div>
+        </div>
+        <div class="stick-readout">
+          <span>THR: <strong id="val-thr">0%</strong></span>
+          <span>YAW: <strong id="val-yaw">0°/s</strong></span>
+        </div>
+      </section>
+
+      <!-- 中央飞行仪表与安全联锁控制台 -->
+      <section class="center-console">
+        <!-- 人工地平仪 + 姿态读数 + 四路 8520 电机实时出力条 -->
+        <div class="hud-card">
+          <div class="attitude-row">
+            <!-- 简易人工地平仪 (Artificial Horizon) -->
+            <div class="horizon-circle">
+              <div class="horizon-sky-ground" id="horizon-plate">
+                <div class="horizon-line"></div>
+              </div>
+              <div class="horizon-cross"></div>
+            </div>
+
+            <!-- 欧拉角实时读数 -->
+            <div class="euler-grid">
+              <div><span class="lbl">ROLL</span><strong id="att-roll">0.0°</strong></div>
+              <div><span class="lbl">PITCH</span><strong id="att-pitch">0.0°</strong></div>
+              <div><span class="lbl">YAW</span><strong id="att-yaw">0.0°</strong></div>
+            </div>
+
+            <!-- Quad-X 四路电机 PWM 占空比柱状条 -->
+            <div class="motors-grid" title="Quad-X 四路 8520 电机实时 PWM (20kHz)">
+              <div class="motor-col">
+                <div class="motor-bar-wrap"><div class="motor-bar" id="m4-bar"></div></div>
+                <span>M4 左前</span>
+              </div>
+              <div class="motor-col">
+                <div class="motor-bar-wrap"><div class="motor-bar" id="m1-bar"></div></div>
+                <span>M1 右前</span>
+              </div>
+              <div class="motor-col">
+                <div class="motor-bar-wrap"><div class="motor-bar" id="m3-bar"></div></div>
+                <span>M3 左后</span>
+              </div>
+              <div class="motor-col">
+                <div class="motor-bar-wrap"><div class="motor-bar" id="m2-bar"></div></div>
+                <span>M2 右后</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 解锁联锁开关 + 大小舵切换 + 微调 (Trim) -->
+        <div class="controls-card">
+          <div class="arm-row">
+            <button id="btn-arm-toggle" class="btn-arm" type="button">
+              解锁起飞 (ARM) — 需油门 ≤ 5%
+            </button>
+            <button id="btn-rate-mode" class="btn-mode" type="button">
+              舵量: 标准 (±25°)
+            </button>
+          </div>
+
+          <!-- Roll / Pitch 配平微调 (解决电池绑偏导致固定方向漂移) -->
+          <div class="trim-row">
+            <div class="trim-group">
+              <span>横滚微调 (Roll Trim): <strong id="trim-roll-val">0.0°</strong></span>
+              <div class="trim-btns">
+                <button id="trim-roll-dec" class="btn-mini" type="button">◀ 左微调</button>
+                <button id="trim-roll-rst" class="btn-mini" type="button">回中</button>
+                <button id="trim-roll-inc" class="btn-mini" type="button">右微调 ▶</button>
+              </div>
+            </div>
+            <div class="trim-group">
+              <span>俯仰微调 (Pitch Trim): <strong id="trim-pitch-val">0.0°</strong></span>
+              <div class="trim-btns">
+                <button id="trim-pitch-dec" class="btn-mini" type="button">▼ 后微调</button>
+                <button id="trim-pitch-rst" class="btn-mini" type="button">回中</button>
+                <button id="trim-pitch-inc" class="btn-mini" type="button">▲ 前微调</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 仿真故障注入测试栏（仅在离线仿真模式下显示，用于一键演练低压缓降与 >60° 翻机保护） -->
+          <div class="sim-toolbar" id="sim-toolbar" style="display: none;">
+            <span>仿真测试：</span>
+            <button id="sim-vbat-39" class="btn-mini" type="button">满电 3.95V</button>
+            <button id="sim-vbat-34" class="btn-mini" type="button">低压 3.40V(&lt;3.5V)</button>
+            <button id="sim-vbat-32" class="btn-mini" type="button">缓降 3.20V(&lt;3.3V)</button>
+            <button id="sim-crash-tilt" class="btn-mini" type="button">模拟 &gt;60° 翻机</button>
+          </div>
+        </div>
+
+        <!-- 13 字节二进制协议实时监视栏 -->
+        <div class="packet-bar">
+          <span class="pkt-tag">13B BLE FRAME:</span>
+          <code id="hex-frame-view">AA 55 00 00 00 00 00 00 00 00 00 00 00</code>
+          <span id="gamepad-status" class="gp-tag">触屏操控 / 可插 USB 或蓝牙手柄</span>
+        </div>
+      </section>
+
+      <!-- 右摇杆区：美国手 Mode 2（纵向俯仰 + 横向横滚，双向松手回中） -->
+      <section class="stick-panel">
+        <div class="stick-header">
+          <span>RIGHT: PITCH / ROLL</span>
+          <span class="sub-hint">Deadzone 4% · Expo 0.35</span>
+        </div>
+        <div class="stick-zone" id="stick-right-zone">
+          <div class="crosshair-h"></div>
+          <div class="crosshair-v"></div>
+          <div class="stick-knob" id="stick-right-knob"></div>
+        </div>
+        <div class="stick-readout">
+          <span>PITCH: <strong id="val-pitch">0.0°</strong></span>
+          <span>ROLL: <strong id="val-roll">0.0°</strong></span>
+        </div>
+      </section>
+    </main>
+
+    <!-- 底部安全告警横幅 -->
+    <div id="alert-banner" class="alert-banner" style="display: none;"></div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
