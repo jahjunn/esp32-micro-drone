@@ -1,9 +1,20 @@
 #include <stdio.h>
 #include <math.h>
-// 1. 引用我们刚写好的二阶巴特沃斯低通滤波器头文件
+// 1. 引用我们写好的二阶巴特沃斯低通滤波器头文件
 #include "../src/flight/biquad_lpf.h"
 
-int main() {
+static int g_failures = 0;
+
+#define CHECK(cond, msg) do { \
+    if (!(cond)) { \
+        printf("[FAIL] %s (line %d)\n", msg, __LINE__); \
+        g_failures++; \
+    } else { \
+        printf("[PASS] %s\n", msg); \
+    } \
+} while (0)
+
+int main(void) {
     BiquadLPF_t lpf;
 
     // 采样频率 400Hz（每拍 dt = 0.0025 秒），截止频率 40Hz
@@ -16,13 +27,14 @@ int main() {
     // ====================================================================
     biquad_init(&lpf, sample_freq, cutoff_freq);
     printf("========== Test 1: Step Response (Input = 10.0) ==========\n");
+    float last_out = 0.0f;
     for (int step = 1; step <= 25; step++) {
-        float out = biquad_update(&lpf, 10.0f);
-        // 每 5 拍打印一次，观察输出如何从 0 平滑爬升并稳定在 10.00
+        last_out = biquad_update(&lpf, 10.0f);
         if (step == 1 || step % 5 == 0) {
-            printf("Step %2d | Raw Input: 10.00 | Filtered Output: %6.2f\n", step, out);
+            printf("Step %2d | Raw Input: 10.00 | Filtered Output: %6.2f\n", step, last_out);
         }
     }
+    CHECK(fabsf(last_out - 10.0f) < 0.05f, "step response converges to 10.0 within 25 ticks");
 
     // ====================================================================
     // 场景 2：真动作（5Hz 慢速倾斜）+ 假动作（150Hz 电机剧烈震动）混合测试
@@ -32,28 +44,30 @@ int main() {
     printf("Step | True(5Hz) | Raw(With Noise) | Filtered(LPF)\n");
     printf("-----+-----------+-----------------+--------------\n");
 
+    float max_tracking_err = 0.0f;
     for (int step = 0; step < 40; step++) {
         float t = step * dt;
-
-        // 真实机身动作：5Hz 正弦波，幅度 5.0（低于 40Hz，应该被放行）
         float true_signal = 5.0f * sinf(2.0f * (float)M_PI * 5.0f * t);
-
-        // 电机高频震动：150Hz 正弦波，幅度高达 10.0（远高于 40Hz，应该被拦截）
         float motor_noise = 10.0f * sinf(2.0f * (float)M_PI * 150.0f * t);
-
-        // 传感器实际读到的混合脏数据
         float raw_input = true_signal + motor_noise;
-
-        // 送入我们的二阶巴特沃斯滤波器
         float filtered = biquad_update(&lpf, raw_input);
 
-        // 从第 20 拍开始打印（此时滤波器已完成初始过渡，可清晰对比）
         if (step >= 20) {
             printf(" %2d  |  %6.2f   |     %7.2f     |    %6.2f\n",
                    step, true_signal, raw_input, filtered);
+            float err = fabsf(filtered - true_signal);
+            if (err > max_tracking_err) {
+                max_tracking_err = err;
+            }
         }
     }
-    printf("=================================================================\n");
+    CHECK(max_tracking_err < 2.5f, "150Hz motor noise attenuated while preserving 5Hz signal");
 
-    return 0;
+    printf("=================================================================\n");
+    if (g_failures == 0) {
+        printf("ALL BIQUAD LPF TESTS PASSED!\n");
+        return 0;
+    }
+    printf("BIQUAD LPF TESTS FAILED: %d\n", g_failures);
+    return 1;
 }

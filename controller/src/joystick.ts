@@ -71,6 +71,15 @@ export class VirtualStick {
     }
   }
 
+    public isDragging(): boolean {
+    return this.activePointerId !== null;
+  }
+
+  public setXNormalized(x: number): void {
+    this.normX = Math.max(-1.0, Math.min(1.0, x));
+    this.renderKnob();
+  }
+
   public setNormalized(x: number, yUp: number): void {
     this.normX = Math.max(-1.0, Math.min(1.0, x));
     this.normY = Math.max(-1.0, Math.min(1.0, -yUp));
@@ -151,11 +160,17 @@ export class VirtualStick {
 export class GamepadPoller {
   private rafId: number | null = null;
   private onUpdate: (gp: Gamepad) => void;
+  private onDisconnect?: () => void;
 
-  constructor(onUpdate: (gp: Gamepad) => void) {
+  constructor(onUpdate: (gp: Gamepad) => void, onDisconnect?: () => void) {
     this.onUpdate = onUpdate;
+    this.onDisconnect = onDisconnect;
     window.addEventListener('gamepadconnected', () => this.start());
-    window.addEventListener('gamepaddisconnected', () => {});
+    window.addEventListener('gamepaddisconnected', () => {
+      if (this.onDisconnect) {
+        this.onDisconnect();
+      }
+    });
     this.start();
   }
 

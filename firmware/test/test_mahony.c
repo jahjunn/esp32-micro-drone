@@ -9,58 +9,59 @@
     场景 3：动态跟手测试（验证“陀螺仪+加速度计配合零延迟”）
     模拟动作：飞机以 60°/s 的角速度匀速抬头（绕 Y 轴 Pitch）转 0.5 秒。
     预期现象：0.5 秒 结束的那一瞬间，解算出的 Pitch 分毫不差停在 30.00°，没有任何迟钝拖影！
-
+    场景 4: 大机动超重抗干扰测试。验证当猛推油门产生横向1.5g+纵向1.5g的加速度时，Mahony不会被干扰，不盲信加速度计，仍然能稳定输出正确姿态。
 */
 #include <stdio.h>
 #include <math.h>
-// 1. 引用我们刚写好的 Mahony 姿态解算头文件
 #include "../src/flight/mahony.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846f
 #endif
 
-// 弧度 <-> 角度 转换宏（方便人类肉眼观察打印结果）
 #define DEG2RAD(d) ((d) * ((float)M_PI / 180.0f))
 #define RAD2DEG(r) ((r) * (180.0f / (float)M_PI))
 
-int main() {
+static int g_failures = 0;
+
+#define CHECK(cond, msg) do { \
+    if (!(cond)) { \
+        printf("[FAIL] %s (line %d)\n", msg, __LINE__); \
+        g_failures++; \
+    } else { \
+        printf("[PASS] %s\n", msg); \
+    } \
+} while (0)
+
+int main(void) {
     Mahony_t ahrs;
     EulerAngle_t euler;
-
-    // 控制频率 400Hz（每拍 dt = 0.0025 秒）
     float dt = 1.0f / 400.0f;
 
-    // ====================================================================
-    // 场景 1：静止抗漂移测试
-    // 飞机水平静止（ax=0, ay=0, az=1g），但陀螺仪 X 轴存在 3 deg/s 的假零偏
-    // 预期：姿态不会随时间无限漂移，而是被加速度计拉住并由 Ki 慢慢抵消零偏
-    // ====================================================================
-    mahony_init(&ahrs, 2.0f, 0.5f); // 适当调大 Ki 以便在几秒仿真内看清零偏抵消过程
+    // 场景 1：静止抗漂移测试（陀螺仪 X 轴存在 3 deg/s 假零偏）
+    mahony_init(&ahrs, 2.0f, 0.5f);
     printf("====== Test 1: Stationary Anti-Drift (Gyro Bias = 3 deg/s) ======\n");
     Vector3_t bias_gyro  = { DEG2RAD(3.0f), 0.0f, 0.0f };
     Vector3_t flat_accel = { 0.0f, 0.0f, 1.0f };
 
-    // 连续跑 2000 拍（模拟真实时间 5 秒）
-    for (int step = 1; step <= 2000; step++) {
+    for (int step = 1; step <= 4800; step++) {
         mahony_update_imu(&ahrs, bias_gyro, flat_accel, dt);
-        if (step % 400 == 0) { // 每满 1 秒打印一次
+        if (step % 400 == 0) {
             mahony_to_euler(&ahrs, &euler);
             printf("Time %d.0s | Roll: %6.2f deg | Learned Bias(ix): %6.2f deg/s\n",
                    step / 400, RAD2DEG(euler.roll), RAD2DEG(ahrs.ix));
         }
     }
+    mahony_to_euler(&ahrs, &euler);
+    CHECK(fabsf(RAD2DEG(euler.roll)) < 0.2f, "Test 1: stationary roll drift suppressed < 0.2 deg");
+    CHECK(fabsf(RAD2DEG(ahrs.ix) - (-3.0f)) < 0.2f, "Test 1: integral learned -3.0 deg/s gyro bias");
 
-    // ====================================================================
-    // 场景 2：倾斜收敛测试（机身向右歪 30 度静置 -> 观察能否收敛到 30.00 deg）
-    // ====================================================================
+    // 场景 2：倾斜收敛测试（机身向右歪 30 度静置）
     mahony_init(&ahrs, 2.0f, 0.005f);
     printf("\n====== Test 2: Tilt Convergence (Static Roll = +30.0 deg) ======\n");
     Vector3_t zero_gyro  = { 0.0f, 0.0f, 0.0f };
-    // 机身绕 X 轴右倾 30° 时，1g 重力投影在 Y 轴为 sin(30°)=0.5，Z 轴为 cos(30°)≈0.866
     Vector3_t tilt_accel = { 0.0f, sinf(DEG2RAD(30.0f)), cosf(DEG2RAD(30.0f)) };
 
-    // 连续跑 1200 拍（3 秒），每 0.5 秒（200 拍）打印一次
     for (int step = 1; step <= 1200; step++) {
         mahony_update_imu(&ahrs, zero_gyro, tilt_accel, dt);
         if (step % 200 == 0) {
@@ -69,11 +70,10 @@ int main() {
                    step * dt, RAD2DEG(euler.roll), RAD2DEG(euler.pitch), RAD2DEG(euler.yaw));
         }
     }
+    mahony_to_euler(&ahrs, &euler);
+    CHECK(fabsf(RAD2DEG(euler.roll) - 30.0f) < 0.5f, "Test 2: static tilt converges to +30.0 deg");
 
-    // ====================================================================
-    // 场景 3：动态跟手测试（以 60 deg/s 角速度匀速抬头旋转 0.5 秒）
-    // 预期：0.5 秒（200 拍）结束时，Pitch 零延迟精确到达 30.00 deg
-    // ====================================================================
+    // 场景 3：动态跟手测试（以 60 deg/s 匀速抬头 0.5 秒 -> 30.0 deg）
     mahony_init(&ahrs, 2.0f, 0.005f);
     printf("\n====== Test 3: Dynamic Tracking (Pitching at 60 deg/s for 0.5s) ======\n");
     float pitch_rate = DEG2RAD(60.0f);
@@ -81,9 +81,7 @@ int main() {
     for (int step = 1; step <= 200; step++) {
         float true_pitch = pitch_rate * (step * dt);
         Vector3_t dyn_gyro  = { 0.0f, pitch_rate, 0.0f };
-        // 绕 Y 轴抬头 θ 时，重力在 X 轴投影为 -sin(θ)，Z 轴为 cos(θ)
         Vector3_t dyn_accel = { -sinf(true_pitch), 0.0f, cosf(true_pitch) };
-
         mahony_update_imu(&ahrs, dyn_gyro, dyn_accel, dt);
 
         if (step % 50 == 0) {
@@ -92,7 +90,27 @@ int main() {
                    step, step * dt, RAD2DEG(true_pitch), RAD2DEG(euler.pitch));
         }
     }
-    printf("======================================================================\n");
+    mahony_to_euler(&ahrs, &euler);
+    CHECK(fabsf(RAD2DEG(euler.pitch) - 30.0f) < 0.2f, "Test 3: dynamic pitch tracks to +30.0 deg");
 
-    return 0;
+    // 场景 4：大机动超重拒信测试（norm_a = sqrt(1.5^2 + 1.5^2) = 2.12g > 1.5g）
+    // 飞机真实角速度为 0（保持水平），但加速度计因剧烈横向加速读到 {0, 1.5g, 1.5g}（歪 45 度）
+    // 预期：因为 2.12g 超出 [0.5g, 1.5g]，Mahony 必须拒绝采信，Roll 保持 0.00 deg 不被带偏！
+    mahony_init(&ahrs, 2.0f, 0.005f);
+    printf("\n====== Test 4: High-G Maneuver Rejection (norm_a = 2.12g) ======\n");
+    Vector3_t high_g_accel = { 0.0f, 1.5f, 1.5f };
+    for (int step = 1; step <= 200; step++) {
+        mahony_update_imu(&ahrs, zero_gyro, high_g_accel, dt);
+    }
+    mahony_to_euler(&ahrs, &euler);
+    printf("After 0.5s of 2.12g lateral accel | Roll: %6.2f deg\n", RAD2DEG(euler.roll));
+    CHECK(fabsf(RAD2DEG(euler.roll)) < 1e-4f, "Test 4: >1.5g accel is rejected, roll stays 0.0 deg");
+
+    printf("======================================================================\n");
+    if (g_failures == 0) {
+        printf("ALL MAHONY TESTS PASSED!\n");
+        return 0;
+    }
+    printf("MAHONY TESTS FAILED: %d\n", g_failures);
+    return 1;
 }

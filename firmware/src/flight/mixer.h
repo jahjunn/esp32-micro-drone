@@ -87,18 +87,38 @@ static inline void mixer_desaturate(MotorOutput_t *out) {
 }
 
 // Quad-X 混控函数
+// 8520 空心杯默认怠速占空比（12%）：
+// 作用：解锁后保持电机微转，防止大机动抗饱和把某侧电机压到 0 停转（停转再起转需 100~200ms 会导致翻机）
+#define MOTOR_IDLE_DEFAULT 0.12f
+
+// Quad-X 混控函数（严格遵循 FRD 正方向契约）：
+//   - roll  > 0（需要向右滚转力矩）-> 左侧电机(M3/M4)加速(+)，右侧电机(M1/M2)减速(-)
+//   - pitch > 0（需要抬头力矩）    -> 前侧电机(M1/M4)加速(+)，后侧电机(M2/M3)减速(-)
+//   - yaw   > 0（需要顺时针右转）  -> 逆时针桨(M1/M3)加速(+)，顺时针桨(M2/M4)减速(-)
 static inline void mixer_quad_x(float throttle, float roll, float pitch, float yaw,
                                 MotorOutput_t *out) {
     // 1. 先按线性混控公式算出未截断的原始分配值
-    // M1 右前 (CCW)：roll 加、pitch 减、yaw 加
-    out->m1 = throttle - pitch + roll + yaw;
-    // M2 右后 (CW)：roll 加、pitch 加、yaw 减
-    out->m2 = throttle + pitch + roll - yaw;
-    // M3 左后 (CCW)：roll 减、pitch 加、yaw 加
-    out->m3 = throttle + pitch - roll + yaw;
-    // M4 左前 (CW)：roll 减、pitch 减、yaw 减
-    out->m4 = throttle - pitch - roll - yaw;
+    // M1 右前 (CCW)：抬头加(+pitch)、右倾减(-roll)、右转加(+yaw)
+    out->m1 = throttle + pitch - roll + yaw;
+    // M2 右后 (CW) ：抬头减(-pitch)、右倾减(-roll)、右转减(-yaw)
+    out->m2 = throttle - pitch - roll - yaw;
+    // M3 左后 (CCW)：抬头减(-pitch)、右倾加(+roll)、右转加(+yaw)
+    out->m3 = throttle - pitch + roll + yaw;
+    // M4 左前 (CW) ：抬头加(+pitch)、右倾加(+roll)、右转减(-yaw)
+    out->m4 = throttle + pitch + roll - yaw;
 
     // 2. 进行保均值抗饱和处理（防止单边饱和导致掉高）
     mixer_desaturate(out);
+}
+
+// 电机怠速保底映射函数（必须在 mixer_quad_x 之后、safety_apply_motor_gate 之前调用！）
+// 作用：将 [0.0, 1.0] 的混控输出线性映射到 [idle, 1.0]，确保解锁飞行中任何电机绝不停转
+static inline void mixer_apply_idle(MotorOutput_t *out, float idle) {
+    float cl_idle = clampf(idle, 0.0f, 0.30f); // 安全钳位：怠速最高不超过 30%
+    float span    = 1.0f - cl_idle;
+    out->m1 = cl_idle + clampf(out->m1, 0.0f, 1.0f) * span;
+    out->m2 = cl_idle + clampf(out->m2, 0.0f, 1.0f) * span;
+    out->m3 = cl_idle + clampf(out->m3, 0.0f, 1.0f) * span;
+    out->m4 = cl_idle + clampf(out->m4, 0.0f, 1.0f) * span;
+
 }

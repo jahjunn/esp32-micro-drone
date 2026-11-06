@@ -306,27 +306,48 @@ window.addEventListener('blur', () => {
 });
 
 // ==================== 物理游戏手柄 (Web Gamepad API) 接入 ====================
-new GamepadPoller((pad: Gamepad) => {
-  gamepadStatus.textContent = `已连接实体手柄: ${pad.id.slice(0, 22)}`;
-  // 标准手柄映射：axes[0]=左X(Yaw), axes[1]=左Y(Throttle), axes[2]=右X(Roll), axes[3]=右Y(Pitch)
-  const lx = pad.axes[0] ?? 0;
-  const ly = -(pad.axes[1] ?? 0); // 上推为正
-  const rx = pad.axes[2] ?? 0;
-  const ry = -(pad.axes[3] ?? 0);
+const applyDeadzone = (v: number, dz = 0.05): number => (Math.abs(v) > dz ? v : 0.0);
+let prevKillBtnPressed = false;
 
-  // 实体手柄仅在拨动超过死区时同步至摇杆视图
-  if (Math.abs(lx) > 0.05 || Math.abs(ly) > 0.05) {
-    leftStick.setNormalized(lx, ly);
+new GamepadPoller(
+  (pad: Gamepad) => {
+    gamepadStatus.textContent = `已连接实体手柄: ${pad.id.slice(0, 22)}`;
+    // 标准手柄映射：axes[0]=左X(Yaw), axes[1]=左Y(Throttle), axes[2]=右X(Roll), axes[3]=右Y(Pitch)
+    const lx = applyDeadzone(pad.axes[0] ?? 0);
+    const ly = applyDeadzone(-(pad.axes[1] ?? 0)); // 上推为正
+    const rx = applyDeadzone(pad.axes[2] ?? 0);
+    const ry = applyDeadzone(-(pad.axes[3] ?? 0));
+
+    // 右摇杆 (Roll / Pitch)：只要手指没在屏幕上拖拽，每帧同步（含松手归零 0.0！）
+    if (!rightStick.isDragging()) {
+      rightStick.setNormalized(rx, ry);
+    }
+
+    // 左摇杆：横向 Yaw 每帧同步（含松手归零），纵向 Throttle 仅在拨动超过死区时更新
+    if (!leftStick.isDragging()) {
+      if (ly !== 0.0) {
+        leftStick.setNormalized(lx, ly);
+      } else {
+        leftStick.setXNormalized(lx);
+      }
+    }
+
+    // B 键 (buttons[1]) 映射为紧急上锁急停（边沿触发，防按住连发）
+    const killPressed = Boolean(pad.buttons[1]?.pressed);
+    if (killPressed && !prevKillBtnPressed) {
+      btnKill.click();
+    }
+    prevKillBtnPressed = killPressed;
+
+    updateStickReadouts();
+  },
+  () => {
+    gamepadStatus.textContent = '实体手柄已断开（已自动回中）';
+    rightStick.releaseSpringAxes();
+    leftStick.releaseSpringAxes();
+    prevKillBtnPressed = false;
   }
-  if (Math.abs(rx) > 0.05 || Math.abs(ry) > 0.05) {
-    rightStick.setNormalized(rx, ry);
-  }
-  // B 键 (buttons[1]) 映射为紧急上锁急停
-  if (pad.buttons[1]?.pressed) {
-    btnKill.click();
-  }
-  updateStickReadouts();
-});
+);
 
 // 默认启动离线仿真闭环，方便打开页面即刻体验摇杆与安全状态机
 updateStickReadouts();

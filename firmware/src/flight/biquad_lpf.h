@@ -83,5 +83,11 @@ static inline float biquad_update(BiquadLPF_t *lpf, float input) {
 
     return output;
 }
-
+// 4. 将滤波器历史状态直接预充电到指定稳态值（消除开机首拍从 0g 爬升到 1g 的冷启动延迟）
+static inline void biquad_reset_to(BiquadLPF_t *lpf, float steady_val) {
+    lpf->x1 = steady_val;
+    lpf->x2 = steady_val;
+    lpf->y1 = steady_val;
+    lpf->y2 = steady_val;
+}
 

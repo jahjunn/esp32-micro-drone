@@ -25,7 +25,7 @@
 | **P1** | 硬件（一体板 + 装配） | 🟡 **部分完成** | 板框 DXF v8 已有；**电机位需改配 8520**；原理图/PCB/打样/焊接/装配未开始 |
 | **P2** | 软件环境搭建 | 🟡 **部分完成** | `platformio.ini`（N16R8）、`firmware/` 与 `controller/` 工程骨架及 C/JS 双端桌面单测环境已就绪；外设总入口初始化待建 |
 | **P3** | 驱动层 | 🟡 **部分完成** | `qmc5883p` 磁力计驱动、`ble_server` BLE GATT 服务端、`protocol.h` 二进制协议（13B/19B + CRC-8）及协议单测已完成；MPU6050 / PWM / VBAT / 状态灯待开始 |
-| **P4** | 算法层 + 单测 | 🟡 **部分完成** | `types.h`、二阶滤波 `biquad_lpf.h`、Mahony `mahony.h`、PID `pid.h`、抗饱和混控 `mixer.h`、五态安全状态机 `safety.h` 及 6 套 C 桌面单测全部完成；传感器标定待推进 |
+| **P4** | 算法层 + 单测 | ✅ **已完成** | `types.h`（FRD 契约）、`biquad_lpf.h`（稳态预充电）、`mahony.h`（0.5~1.5g 窗口 + 零偏限幅）、`pid.h`（测量值微分 + 条件抗饱和）、`mixer.h`（12% 怠速保底）、`safety.h`（低压迫降锁存）、`controller.h`（400/100Hz 串级总指挥 + 200 拍陀螺仪自动校准 + 地面怠速静默 + 电压滤波）及 7 套带 `CHECK` 断言的 C 单测全部通过 |
 | **P5** | 任务编排（双核） | ⬜ 未开始 | `ble_server` 已内置 `portMUX` 跨核零积压同步锁；待 `main.cpp` 总控任务接入 |
 | **P6** | 调试与调参 | 🟡 **部分完成** | `controller/` 跨平台蓝牙地面站与手柄（Mode 2 双摇杆、Gamepad、死区/Expo/Trim、安全联锁、KILL 急停、遥测看板、离线仿真器）及协议对齐单测已完成；实机单轴调参待开始 |
 | **P7** | 首飞 | ⬜ 未开始 | — |
@@ -160,20 +160,20 @@
 
 ---
 
-## 6. P4 · 算法层 + 单元测试（🟡 进行中）
+## 6. P4 · 算法层 + 单元测试（✅ 已完成）
 
 | 编号 | 工作内容 | 产出物 | 验收标准 | 前置 | 分工 |
 |------|----------|--------|----------|------|------|
-| P4-1 | 二阶巴特沃斯 LPF（30–50Hz，400Hz 采样） | `firmware/src/flight/biquad_lpf.h` | ☐ 电机振动噪声明显下降<br>☐ 相位滞后可接受 | P3-2 | 我 ✅ |
-| P4-2 | Mahony 四元数姿态解算 | `firmware/src/flight/mahony.h` | ☐ 静止不发散<br>☐ 晃动后能收敛 | P4-1 | 我 ✅ |
-| P4-3 | 标定：陀螺零偏 + 加计水平 | 标定模块 | ☐ 静止陀螺≈0<br>☐ 水平时 roll/pitch≈0 | P4-2 | 我 |
-| P4-4 | 串级 PID（外环 100Hz / 内环 400Hz，限幅/抗饱和） | `firmware/src/flight/pid.h` | ☐ 参数可在线调<br>☐ 限幅生效 | P4-3 | 我 ✅ |
-| P4-5 | Quad-X 混控（保均值平移抗饱和）+ 电机编号/转向约定固化 | `firmware/src/flight/mixer.h` | ☐ 四路输出边界正确<br>☐ 约定表可照此装配 | P3-4 | 我 ✅ |
-| P4-6 | 五态安全状态机：失联 500ms、倾角 >60° Sticky 锁死、3.5V/3.3V 分级低压、解锁四重联锁、电机总闸门 | `firmware/src/flight/safety.h` | ☐ 断链/翻机能锁死停机<br>☐ 低压缓降与解锁联锁生效 | P3-5、P3-8 | 我 ✅ |
-| P4-7 | 桌面单元测试：LPF/Mahony/PID/混控/安全/协议（共 6 套 C 单测 + 前端协议对齐单测） | `firmware/test/test_*.c` & `controller/test/verify_protocol.mjs` | ☐ PC 上全部通过<br>☐ 覆盖 6 类核心场景与边界 | P4-1~P4-6、P3-8、P2-5 | 我 ✅ |
-| P4-8 | 参数初值整定 + 算法评审 | 初版参数 + 评审记录 | ☐ 三轴初值有依据<br>☐ 与文档无偏差 | P4-7 | 协作 |
+| P4-1 | 二阶巴特沃斯 LPF（Gyro 80Hz / Accel 40Hz，400Hz 采样 + 首拍稳态预充电） | `firmware/src/flight/biquad_lpf.h` | ☑ 电机振动噪声明显下降<br>☑ 相位滞后可接受 | P3-2 | 我 ✅ |
+| P4-2 | Mahony 四元数姿态解算（0.5g~1.5g 大机动保护窗 + 零偏积分限幅 + 双速增益切换） | `firmware/src/flight/mahony.h` | ☑ 静止不发散<br>☑ 晃动后能收敛 | P4-1 | 我 ✅ |
+| P4-3 | 标定：陀螺 200 拍开机静止自动校准（含手抖峰峰值超限重测）+ FLU→FRD 传感器坐标映射 | `firmware/src/flight/controller.h` | ☑ 静止陀螺零偏自动扣除<br>☑ 未校准前禁止解锁 | P4-2 | 我 ✅ |
+| P4-4 | 串级 PID（外环 100Hz 角度 P / 内环 400Hz 角速度 PID + 测量值微分 + 条件抗积分饱和） | `firmware/src/flight/pid.h`、`controller.h` | ☑ 参数可在线调<br>☑ 3:1 内外环带宽匹配、无打杆尖峰 | P4-3 | 我 ✅ |
+| P4-5 | Quad-X 混控（FRD 符号契约 + 保均值抗饱和 + 12% 空心杯怠速保底） | `firmware/src/flight/mixer.h` | ☑ 四路输出边界正确<br>☑ 约定表可照此装配 | P3-4 | 我 ✅ |
+| P4-6 | 五态安全状态机：失联 500ms、倾角 >60° Sticky 锁死、3.5V/3.3V 分级低压（LOWBAT_LAND 单向锁存防回弹抽搐）、解锁四重联锁、电机总闸门 | `firmware/src/flight/safety.h` | ☑ 断链/翻机能锁死停机<br>☑ 低压锁存缓降与解锁联锁生效 | P3-5、P3-8 | 我 ✅ |
+| P4-7 | 桌面单元测试：LPF/Mahony/PID/混控/安全/串级总控/协议（共 7 套 C 单测全含 `CHECK` 断言 + 前端协议对齐单测） | `firmware/test/test_*.c` & `controller/test/verify_protocol.mjs` | ☑ PC 上全部通过（0 失败）<br>☑ 覆盖核心场景与异常边界 | P4-1~P4-6、P3-8、P2-5 | 我 ✅ |
+| P4-8 | 参数初值整定 + 算法审查加固 + 防呆铁律归档 | `AGENTS.md` + `controller.h` | ☑ 三轴初值经闭环仿真验证<br>☑ 7 条防呆铁律固化入仓 | P4-7 | 协作 ✅ |
 
-**里程碑 P4**：单测全绿，算法可上板。
+**里程碑 P4**：7 套单测全绿，串级控制器闭环收敛，算法可上板。 ✅
 
 ---
 

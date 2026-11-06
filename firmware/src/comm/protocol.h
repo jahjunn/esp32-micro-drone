@@ -115,7 +115,7 @@ typedef enum {
     PROTOCOL_ERR_NULL,        // 空指针
     PROTOCOL_ERR_LENGTH,      // 帧长度不匹配
     PROTOCOL_ERR_HEADER,      // 帧头字节错误
-    PROTOCOL_ERR_CRC,         // CRC8 校验失败（空中射频ビット翻转）
+    PROTOCOL_ERR_CRC,         // CRC8 校验失败（空中射频比特翻转）
     PROTOCOL_ERR_BOUNDS       // 字段数值越界（防畸形包注入）
 } ProtocolStatus_t;
 
@@ -216,7 +216,7 @@ static inline void protocol_pack_control(const ControlCommand_t *cmd,
 
     uint8_t flags = extra_flags & ~(uint8_t)PROTOCOL_FLAG_ARMED;
     if (cmd->armed) {
-        flags |= PROTOCOL_FLAG_ARMED;
+        flags = (uint8_t)(flags | PROTOCOL_FLAG_ARMED);
     }
     out_pkt->flags = flags;
 
