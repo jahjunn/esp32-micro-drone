@@ -22,7 +22,7 @@
 #endif
 
 // 1. 定义二阶低通滤波器的“状态盒子”：
-// 作用：保存滤波系数（决定筛子孔径大小）和前两拍的历史数据
+// 作用：保存滤波系数（决定筛子孔径大小）和前两拍的历史数据（输入/输出保持同量纲，如 [rad/s] 或 [g]）
 typedef struct {
     // 5 个滤波器系数（由采样频率和截止频率共同决定）
     float b0;
@@ -39,7 +39,7 @@ typedef struct {
 } BiquadLPF_t;
 
 // 2. 滤波器初始化函数（开机时调用一次）：
-// 输入：sample_freq 采样频率（如 400Hz），cutoff_freq 截止频率（如 40Hz）
+// 输入：sample_freq 采样频率 [Hz]（如 400Hz），cutoff_freq 截止频率 [Hz]（如 40Hz / 80Hz）
 static inline void biquad_init(BiquadLPF_t *lpf, float sample_freq, float cutoff_freq) {
     // 利用双线性变换公式，计算二阶巴特沃斯（Butterworth）系数
     // 其中 Q = 1 / sqrt(2) ≈ 0.70710678f，保证通带最平坦、不产生额外谐振尖峰
@@ -65,8 +65,8 @@ static inline void biquad_init(BiquadLPF_t *lpf, float sample_freq, float cutoff
 }
 
 // 3. 滤波器核心计算函数（每次循环 400Hz 调用一次）：
-// 输入：当前传感器带噪原始值 input
-// 输出：滤除高频震动后的平滑值 output
+// 输入：当前传感器带噪原始值 input [rad/s] 或 [g]
+// 输出：滤除高频震动后的平滑值 output（与 input 同单位）
 static inline float biquad_update(BiquadLPF_t *lpf, float input) {
     // 【步骤 1：套用二阶差分方程算出当前输出】
     float output = lpf->b0 * input
@@ -83,11 +83,11 @@ static inline float biquad_update(BiquadLPF_t *lpf, float input) {
 
     return output;
 }
-// 4. 将滤波器历史状态直接预充电到指定稳态值（消除开机首拍从 0g 爬升到 1g 的冷启动延迟）
+
+// 4. 将滤波器历史状态直接预充电到指定稳态值 steady_val [与 input 同单位]（消除开机首拍从 0 爬升的冷启动延迟）
 static inline void biquad_reset_to(BiquadLPF_t *lpf, float steady_val) {
     lpf->x1 = steady_val;
     lpf->x2 = steady_val;
     lpf->y1 = steady_val;
     lpf->y2 = steady_val;
 }
-

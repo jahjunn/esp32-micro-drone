@@ -25,10 +25,12 @@ html, body {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  overscroll-behavior: none; /* 禁止下拉刷新 / 回弹，防止拖摇杆时误触浏览器手势 */
   background-color: var(--bg-deep);
   color: var(--text-main);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   touch-action: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .cockpit-shell {
@@ -36,11 +38,14 @@ html, body {
   flex-direction: column;
   width: 100vw;
   height: 100vh;
-  padding: 8px 12px;
-  gap: 8px;
+  height: 100dvh; /* 手机浏览器地址栏收放时保持真实可视高度 */
+  /* 刘海 / 圆角 / 手势条安全区 */
+  padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
+           max(6px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
+  gap: 6px;
 }
 
-/* ==================== 顶部状态栏 ==================== */
+/* ==================== 顶栏 ==================== */
 .hud-topbar {
   display: flex;
   align-items: center;
@@ -57,11 +62,13 @@ html, body {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .status-dot {
   width: 11px;
   height: 11px;
+  flex-shrink: 0;
   border-radius: 50%;
   background: #64748b;
   box-shadow: 0 0 6px rgba(100, 116, 139, 0.6);
@@ -75,25 +82,12 @@ html, body {
   box-shadow: 0 0 10px var(--accent-cyan);
 }
 
-.brand-title {
-  font-weight: 700;
-  font-size: 0.95rem;
-  letter-spacing: 0.5px;
-}
-
-.badge-ble {
-  font-size: 0.7rem;
-  background: rgba(6, 182, 212, 0.2);
-  color: var(--accent-cyan);
-  border: 1px solid var(--accent-cyan);
-  padding: 1px 5px;
-  border-radius: 4px;
-  margin-left: 4px;
-}
-
 .conn-sub {
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .state-pill {
@@ -101,7 +95,6 @@ html, body {
   border-radius: 6px;
   font-weight: 700;
   font-size: 0.82rem;
-  letter-spacing: 0.4px;
   text-align: center;
   white-space: nowrap;
 }
@@ -132,20 +125,13 @@ html, body {
   to { opacity: 0.55; }
 }
 
-.metrics-group {
-  display: flex;
-  gap: 8px;
-}
-
 .metric-box {
   background: var(--bg-panel);
   border: 1px solid var(--border-dim);
   border-radius: 6px;
-  padding: 3px 9px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  padding: 4px 10px;
   min-width: 72px;
+  text-align: center;
 }
 .metric-box.warn {
   border-color: var(--accent-amber);
@@ -156,12 +142,6 @@ html, body {
   background: rgba(239, 68, 68, 0.2);
   color: #fca5a5;
 }
-
-.metric-label {
-  font-size: 0.62rem;
-  color: var(--text-muted);
-}
-
 .metric-val {
   font-size: 0.88rem;
   font-weight: 700;
@@ -181,15 +161,10 @@ html, body {
   font-size: 0.8rem;
   font-weight: 700;
   cursor: pointer;
-  transition: transform 0.08s, filter 0.15s;
+  white-space: nowrap;
 }
-.btn:active {
-  transform: scale(0.96);
-}
-.btn-primary {
-  background: var(--accent-blue);
-  color: #fff;
-}
+.btn:active { transform: scale(0.96); }
+.btn-primary { background: var(--accent-blue); color: #fff; }
 .btn-secondary {
   background: var(--bg-panel);
   color: var(--accent-cyan);
@@ -198,16 +173,16 @@ html, body {
 .btn-kill {
   background: var(--accent-red);
   color: #fff;
-  padding: 7px 16px;
-  font-size: 0.86rem;
+  padding: 7px 20px;
+  font-size: 0.9rem;
   box-shadow: 0 0 12px rgba(239, 68, 68, 0.45);
 }
 
-/* ==================== 主操控区三栏布局 ==================== */
+/* ==================== 主操控区 ==================== */
 .cockpit-main {
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(210px, 1fr) minmax(300px, 1.35fr) minmax(210px, 1fr);
+  grid-template-columns: 1fr minmax(180px, 0.7fr) 1fr;
   gap: 10px;
   min-height: 0;
 }
@@ -216,32 +191,20 @@ html, body {
   background: var(--bg-card);
   border: 1px solid var(--border-dim);
   border-radius: 12px;
-  padding: 8px 10px;
+  padding: 6px 8px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: center;
   align-items: center;
-}
-
-.stick-header {
-  width: 100%;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--text-muted);
-}
-
-.sub-hint {
-  font-size: 0.68rem;
-  font-weight: 400;
-  color: #64748b;
+  gap: 6px;
+  min-height: 0;
+  touch-action: none; /* 整个半屏都是触控区，拇指落哪都行 */
 }
 
 .stick-zone {
   position: relative;
-  width: min(100%, 240px);
+  /* 按可视高度取摇杆直径：横屏手机上最大化且不溢出 */
+  width: min(100%, 60dvh);
   aspect-ratio: 1 / 1;
   background: radial-gradient(circle, #172338 0%, #0b1220 75%);
   border: 2px solid var(--border-dim);
@@ -251,10 +214,9 @@ html, body {
   justify-content: center;
   touch-action: none;
   overflow: hidden;
+  pointer-events: none; /* 事件由整块 .stick-panel 接收 */
 }
-.stick-zone-throttle {
-  border-radius: 22px;
-}
+.stick-zone-throttle { border-radius: 16%; }
 .stick-zone.active {
   border-color: var(--accent-cyan);
   box-shadow: 0 0 15px rgba(6, 182, 212, 0.25) inset;
@@ -280,8 +242,8 @@ html, body {
 }
 
 .stick-knob {
-  width: 58px;
-  height: 58px;
+  width: 26%;
+  aspect-ratio: 1 / 1;
   border-radius: 50%;
   background: radial-gradient(circle at 35% 35%, #38bdf8, #0284c7 65%, #0369a1);
   border: 2px solid #bae6fd;
@@ -294,47 +256,39 @@ html, body {
   width: 100%;
   display: flex;
   justify-content: space-around;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
-.stick-readout strong {
-  color: var(--text-main);
-}
+.stick-readout strong { color: var(--text-main); }
 
-/* ==================== 中央控制台 ==================== */
+/* ==================== 中央：地平仪 + 解锁 + 更多 ==================== */
 .center-console {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  justify-content: center;
+  align-items: stretch;
+  gap: 12px;
   min-height: 0;
 }
 
-.hud-card, .controls-card {
-  background: var(--bg-card);
-  border: 1px solid var(--border-dim);
-  border-radius: 10px;
-  padding: 10px 12px;
-}
-
-.attitude-row {
+.horizon-wrap {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  gap: 8px;
 }
 
 .horizon-circle {
   position: relative;
-  width: 84px;
-  height: 84px;
+  width: clamp(70px, 22dvh, 110px);
+  height: clamp(70px, 22dvh, 110px);
   border-radius: 50%;
   border: 2px solid var(--accent-cyan);
   overflow: hidden;
-  flex-shrink: 0;
   background: #0f172a;
 }
-
 .horizon-sky-ground {
   position: absolute;
   top: -50%;
@@ -344,7 +298,6 @@ html, body {
   background: linear-gradient(to bottom, #0284c7 0%, #0369a1 50%, #78350f 50%, #451a03 100%);
   transition: transform 0.04s linear;
 }
-
 .horizon-line {
   position: absolute;
   top: 50%;
@@ -352,38 +305,199 @@ html, body {
   height: 2px;
   background: #fff;
 }
-
 .horizon-cross {
   position: absolute;
   inset: 0;
   border-top: 2px solid rgba(250, 204, 21, 0.85);
-  width: 36px;
+  width: 40px;
   margin: auto;
   height: 0;
 }
 
 .euler-grid {
   display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: 10px;
+  font-size: 0.78rem;
   font-variant-numeric: tabular-nums;
-  min-width: 86px;
 }
-.euler-grid div {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.8rem;
+.euler-grid div { display: flex; flex-direction: column; align-items: center; }
+.euler-grid .lbl { color: var(--text-muted); font-size: 0.68rem; }
+
+.btn-arm {
+  position: relative;
+  overflow: hidden;
+  min-height: 56px; /* 拇指友好的大触控目标 */
+  padding: 12px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--accent-green);
+  background: rgba(16, 185, 129, 0.16);
+  color: #34d399;
+  font-weight: 700;
+  font-size: 1rem;
+  cursor: pointer;
 }
-.euler-grid .lbl {
+/* 长按进度条：按住 0.6s 填满后才执行解锁/上锁，防止飞行中误触 */
+.btn-arm::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 0;
+  background: rgba(255, 255, 255, 0.3);
+  pointer-events: none;
+}
+.btn-arm.holding::after {
+  width: 100%;
+  transition: width 0.6s linear;
+}
+.btn-arm.armed {
+  background: var(--accent-amber);
+  border-color: var(--accent-amber);
+  color: #090d16;
+}
+
+/* ---- 状态 / 工具入口按钮与原生模态弹窗 ---- */
+.btn-more {
+  background: var(--bg-panel);
   color: var(--text-muted);
-  font-size: 0.72rem;
+  border: 1px solid var(--border-dim);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
 }
+.btn-more:hover,
+.btn-more:active {
+  color: var(--accent-cyan);
+  border-color: var(--accent-cyan);
+}
+
+.settings-dialog {
+  margin: auto;
+  padding: 0;
+  width: min(420px, 90vw);
+  max-height: 86dvh;
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  overflow: visible;
+}
+.settings-dialog::backdrop {
+  background: rgba(3, 7, 18, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.dialog-box {
+  background: var(--bg-card);
+  border: 1px solid var(--accent-cyan);
+  border-radius: 14px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 86dvh;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.78);
+}
+
+.dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: var(--bg-panel);
+  border-bottom: 1px solid var(--border-dim);
+  flex-shrink: 0;
+}
+.dialog-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text-main);
+}
+.btn-close {
+  background: rgba(239, 68, 68, 0.16);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.5);
+  border-radius: 8px;
+  min-height: 36px;
+  padding: 6px 14px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+.btn-close:active {
+  background: rgba(239, 68, 68, 0.35);
+}
+
+.dialog-body {
+  padding: 12px 14px;
+  overflow-y: auto;
+  touch-action: pan-y;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.more-row { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.btn-mode {
+  flex: 1;
+  min-height: 40px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border-dim);
+  background: var(--bg-panel);
+  color: var(--text-main);
+  font-weight: 600;
+  font-size: 0.82rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn-mode:active {
+  border-color: var(--accent-cyan);
+}
+
+.gamepad-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-dim);
+}
+.gamepad-row[hidden] {
+  display: none;
+}
+
+.btn-mini {
+  background: #1e293b;
+  color: var(--text-main);
+  border: 1px solid #334155;
+  border-radius: 6px;
+  min-height: 36px;
+  padding: 6px 10px;
+  font-size: 0.74rem;
+  cursor: pointer;
+}
+.btn-mini:active { background: #334155; }
+
+.diag-row {
+  display: flex;
+  justify-content: space-around;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+.diag-row strong { color: var(--text-main); }
+.gp-tag { font-size: 0.72rem; color: var(--accent-cyan); }
 
 .motors-grid {
   display: flex;
-  gap: 8px;
-  align-items: flex-end;
-  height: 82px;
+  gap: 12px;
+  justify-content: center;
 }
 .motor-col {
   display: flex;
@@ -395,7 +509,7 @@ html, body {
 }
 .motor-bar-wrap {
   width: 18px;
-  height: 60px;
+  height: 50px;
   background: var(--bg-panel);
   border: 1px solid var(--border-dim);
   border-radius: 4px;
@@ -410,121 +524,19 @@ html, body {
   transition: height 0.05s linear;
 }
 
-.controls-card {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-around;
-  gap: 8px;
-}
-
-.arm-row {
-  display: flex;
-  gap: 8px;
-}
-
-.btn-arm {
-  flex: 1.4;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid var(--accent-green);
-  background: rgba(16, 185, 129, 0.16);
-  color: #34d399;
-  font-weight: 700;
-  font-size: 0.84rem;
-  cursor: pointer;
-}
-.btn-arm.armed {
-  background: var(--accent-amber);
-  border-color: var(--accent-amber);
-  color: #090d16;
-}
-
-.btn-mode {
-  flex: 1;
-  padding: 10px;
-  border-radius: 8px;
-  border: 1px solid var(--border-dim);
-  background: var(--bg-panel);
-  color: var(--text-main);
-  font-weight: 600;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.trim-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 8px;
-}
-
-.trim-group {
-  background: var(--bg-panel);
-  border: 1px solid var(--border-dim);
-  border-radius: 6px;
-  padding: 6px 8px;
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-}
-.trim-group strong {
+#hex-frame-view {
   color: var(--accent-cyan);
-}
-.trim-btns {
-  display: flex;
-  justify-content: space-between;
-  gap: 4px;
-}
-
-.btn-mini {
-  background: #1e293b;
-  color: var(--text-main);
-  border: 1px solid #334155;
-  border-radius: 4px;
-  padding: 3px 7px;
-  font-size: 0.7rem;
-  cursor: pointer;
-}
-.btn-mini:active {
-  background: #334155;
+  font-family: "Consolas", "Courier New", monospace;
+  font-size: 0.72rem;
+  text-align: center;
 }
 
 .sim-toolbar {
-  display: flex;
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
   font-size: 0.72rem;
   color: var(--accent-cyan);
-  padding-top: 2px;
-}
-
-.packet-bar {
-  background: var(--bg-card);
-  border: 1px solid var(--border-dim);
-  border-radius: 8px;
-  padding: 6px 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  font-size: 0.72rem;
-}
-.pkt-tag {
-  color: var(--text-muted);
-  font-weight: 700;
-}
-#hex-frame-view {
-  color: var(--accent-cyan);
-  font-family: "Consolas", "Courier New", monospace;
-  font-size: 0.78rem;
-  letter-spacing: 0.5px;
-}
-.gp-tag {
-  color: var(--text-muted);
-  font-size: 0.68rem;
 }
 
 .alert-banner {
@@ -542,11 +554,34 @@ html, body {
   z-index: 100;
 }
 
+.rotate-hint {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: var(--bg-deep);
+  color: var(--text-main);
+  font-size: 1.2rem;
+  font-weight: 700;
+  text-align: center;
+  line-height: 1.8;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+}
+.rotate-hint small { color: var(--text-muted); font-weight: 400; font-size: 0.85rem; }
+@media (orientation: portrait) and (max-width: 900px) {
+  .rotate-hint { display: flex; }
+}
+
+/* 矮屏（横屏手机）紧凑化 */
+@media (max-height: 460px) {
+  .hud-topbar { padding: 4px 10px; }
+  .btn { padding: 6px 10px; }
+  .btn-kill { padding: 6px 18px; }
+}
+
 @media (max-width: 760px) {
-  .hide-sm {
-    display: none;
-  }
-  .cockpit-main {
-    grid-template-columns: 1fr 1.15fr 1fr;
-  }
+  .conn-sub { display: none; }
+  .cockpit-main { grid-template-columns: 1fr 0.8fr 1fr; }
 }

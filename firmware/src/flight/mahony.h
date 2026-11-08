@@ -9,12 +9,12 @@
 #include <math.h>
 #include "types.h" // 复用我们定义的 Vector3_t 和 EulerAngle_t
 
-// 加速度计可信重力模长窗口（要求输入 accel 单位为 g，静止时模长约为 1.0g）
+// 加速度计可信重力模长窗口（要求输入 accel 单位为 [g]，静止时模长约为 1.0g）
 // 超出 [0.5g, 1.5g] 说明飞机处于剧烈加减速或撞击中，此时暂停加速度计修正，仅靠陀螺仪积分
 #define MAHONY_ACCEL_MIN_G  0.5f
 #define MAHONY_ACCEL_MAX_G  1.5f
 
-// 陀螺仪零偏积分上限（单位：rad/s，0.10 rad/s ≈ 5.7 deg/s，足以覆盖 MPU6050 温漂且防积分发散）
+// 陀螺仪零偏积分上限（单位 [rad/s]，0.10 rad/s ≈ 5.7 deg/s，足以覆盖 MPU6050 温漂且防积分发散）
 #define MAHONY_BIAS_LIMIT   0.10f
 
 // 内部辅助限幅函数（命名为 mahony_clampf，避免与 mixer.h 中的 clampf 重名冲突）
@@ -26,7 +26,7 @@ static inline float mahony_clampf(float v, float lo, float hi) {
 
 // 1. 定义 Mahony 姿态解算器的“状态盒子”
 typedef struct {
-    float kp;         // 比例增益：决定有多相信加速度计（拉回水平的速度，典型值 2.0f）
+    float kp;         // 比例增益 [无量纲/s 权重]：决定有多相信加速度计（拉回水平的速度，典型值 2.0f）
     float ki;         // 积分增益：用于慢慢消除陀螺仪的静态零偏（典型值 0.005f）
 
     // 单位四元数：内部维护的三维姿态（开机水平静止时为 1, 0, 0, 0）
@@ -35,7 +35,7 @@ typedef struct {
     float q2;
     float q3;
 
-    // 三轴积分误差累加器：专门记住并抵消陀螺仪的温漂/零偏
+    // 三轴积分误差累加器：专门记住并抵消陀螺仪的温漂/零偏，单位 [rad/s]
     float ix;
     float iy;
     float iz;
@@ -62,9 +62,9 @@ static inline void mahony_init(Mahony_t *m, float kp, float ki) {
 
 // 4. Mahony 六轴姿态更新核心函数（每次控制循环 400Hz 调用一次）
 // 输入：
-//   gyro  —— 滤波后的三轴角速度（必须为弧度/秒 rad/s，FRD 坐标系）
-//   accel —— 滤波后的三轴加速度（单位必须为 g，静止平放时约为 {0, 0, +1.0g}）
-//   dt    —— 采样周期（秒，例如 400Hz 对应 0.0025f）
+//   gyro  —— 滤波后的三轴角速度（必须为弧度/秒 [rad/s]，FRD 坐标系）
+//   accel —— 滤波后的三轴比力加速度（单位必须为 [g]，静止平放时约为 {0, 0, +1.0g}）
+//   dt    —— 采样周期 [s]（例如 400Hz 对应 0.0025f）
 static inline void mahony_update_imu(Mahony_t *m, Vector3_t gyro, Vector3_t accel, float dt) {
     float gx = gyro.x;
     float gy = gyro.y;
@@ -134,22 +134,22 @@ static inline void mahony_update_imu(Mahony_t *m, Vector3_t gyro, Vector3_t acce
     }
 }
 
-// 5. 将四元数翻译为人类和 PID 看得懂的欧拉角（输出为弧度制 rad，对齐 types.h 约定）
+// 5. 将四元数翻译为人类和 PID 看得懂的欧拉角（输出为弧度制 [rad]，对齐 types.h FRD 约定）
 static inline void mahony_to_euler(const Mahony_t *m, EulerAngle_t *out) {
     float q0 = m->q0;
     float q1 = m->q1;
     float q2 = m->q2;
     float q3 = m->q3;
 
-    // Roll（横滚角，绕 X 轴）
+    // Roll（横滚角，绕 +X 轴）
     out->roll = atan2f(2.0f * (q0 * q1 + q2 * q3),
                        1.0f - 2.0f * (q1 * q1 + q2 * q2));
 
-    // Pitch（俯仰角，绕 Y 轴）：先限幅到 [-1, 1]，防止浮点误差导致 asinf 算出 NaN
+    // Pitch（俯仰角，绕 +Y 轴）：先限幅到 [-1, 1]，防止浮点误差导致 asinf 算出 NaN
     float sinp = mahony_clampf(2.0f * (q0 * q2 - q3 * q1), -1.0f, 1.0f);
     out->pitch = asinf(sinp);
 
-    // Yaw（航向角，绕 Z 轴）
+    // Yaw（航向角，绕 +Z 轴）
     out->yaw = atan2f(2.0f * (q0 * q3 + q1 * q2),
                       1.0f - 2.0f * (q2 * q2 + q3 * q3));
 }

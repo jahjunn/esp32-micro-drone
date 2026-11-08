@@ -56,5 +56,6 @@
 ---
 
 ## 7. 地面站与实体手柄防卡死铁律（Controller Safety）
-- **死区显式归零**：Web Gamepad 实体手柄回中进入 `<= 0.05` 死区时，必须向自回中摇杆（Roll / Pitch / Yaw）显式写入 `0.0`，严禁因跳过 `if` 分支导致虚拟摇杆冻结在死区边缘。
-- **断连与切后台保护**：监听 `gamepaddisconnected`、`visibilitychange`、`blur` 事件并立即释放所有弹簧自回中轴；实体按键（如 B 键急停）必须使用边沿检测防长按连发。
+- **死区显式归零与油门防暴冲**：Web Gamepad 实体手柄回中进入死区时，必须向自回中摇杆（Roll / Pitch / Yaw）显式写入 `0.0`，严禁因跳过 `if` 分支导致虚拟摇杆冻结在死区边缘；标准弹簧回中手柄（Xbox / PS）的油门轴默认走带死区速率积分的**增量油门**（禁止因未拨动手柄静止在 `0.0` 而跳变至 `50%` 推力），切至 USB 航模控**直映模式**时必须启用 Soft-Takeover 防暴冲接管保护。
+- **断连与切后台强制上锁归零（E-04）**：监听 `gamepaddisconnected`（含轮询掉线下降沿检测）、`visibilitychange`（`document.hidden`）、`blur`、`pagehide` 事件，一律立即清空油门并回中弹簧轴；若此前处于解锁态（`isArmed`），**必须同步强制上锁（`armed = false`）、锁存急停并连发 `KILL` 急停帧**；实体急停按键（如 B 键 / `Escape` / 解锁态 `Space`）必须防长按连发或浏览器按钮焦点误触。
+- **Mode-2 人机操作 -> 航空 FRD 转换边界**：机载控制律与 13B BLE 控制帧严格锁死 FRD 右手系（`+Pitch = 抬头`），前端交互输出合成层（[`buildControlInput()`](file:///e:/Lightweight%20UAV%20Project/controller/src/flight_logic.ts#L64-L89)）必须将右摇杆前推与 `▲ 前微调` 映射为 **FRD 负俯仰（`-pitch_target` 低头前飞）**，且离线仿真器（[`QuadSimulator`](file:///e:/Lightweight%20UAV%20Project/controller/src/flight_logic.ts#L307-L487)）的 Quad-X 混控、12% 怠速保底、分级倾角保护与低压单向锁存必须与固件保持 1:1 一致。

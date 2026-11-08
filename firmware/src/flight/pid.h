@@ -3,6 +3,8 @@
 
 // 1. 定义 PID 控制器的“状态盒子”：
 // 作用：保存算法计算所需的所有参数、历史状态和限幅值
+//   - 外环（角度环）：setpoint/measured 单位 [rad]，dt 单位 [s]，output 单位 [rad/s]
+//   - 内环（角速度环）：setpoint/measured 单位 [rad/s]，dt 单位 [s]，output 单位 归一化混控力矩 [norm]
 typedef struct {
     float kp;             // P 参数：当前误差增益
     float ki;             // I 参数：过去积累误差增益
@@ -33,6 +35,10 @@ static inline void pid_init(PID_t *pid, float kp, float ki, float kd, float int_
     pid_reset(pid);
 }
 
+// 4. 测量值微分 + 条件抗积分饱和 PID 更新函数：
+//   - setpoint / measured : 期望值与真实测量值（外环 [rad] / 内环 [rad/s]）
+//   - dt                  : 控制周期 [s]
+//   - 返回值              : 限幅后的控制输出（外环 [rad/s] / 内环 [norm]）
 static inline float pid_update_measurement(PID_t *pid, float setpoint, float measured, float dt) {
     float error = setpoint - measured;
 
@@ -76,7 +82,7 @@ static inline float pid_update_measurement(PID_t *pid, float setpoint, float mea
     return output;
 }
 
-// 5. 兼容单参数误差接口（等价于 setpoint = 0, measured = -error）：
+// 5. 兼容单参数误差接口（等价于 setpoint = 0, measured = -error，dt 单位 [s]）：
 static inline float pid_update(PID_t *pid, float error, float dt) {
     return pid_update_measurement(pid, 0.0f, -error, dt);
 }

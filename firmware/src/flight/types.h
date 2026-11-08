@@ -14,36 +14,37 @@
 // ============================================================================
 
 // 3. 定义通用三维向量：
-// 作用：打包 X, Y, Z 三个轴的数据，给传感器（加速度计/陀螺仪）统一格式
+// 作用：打包 X, Y, Z 三个轴的数据，给传感器统一格式
+//   - 用于陀螺仪时单位 [rad/s]；用于加速度计/比力时单位 [g]；用于磁力计时单位 [G]
 typedef struct {
-    float x; // X轴数值（机头正前为 +）
-    float y; // Y轴数值（机身正右为 +）
-    float z; // Z轴数值（机身正下为 +）
+    float x; // X轴数值（FRD: 机头正前为 +）
+    float y; // Y轴数值（FRD: 机身正右为 +）
+    float z; // Z轴数值（FRD: 机身正下为 +）
 } Vector3_t;
 
 // 4. 定义姿态欧拉角：
-// 作用：飞控经过数学姿态解算后输出的“机身倾角”（统一弧度制 rad）
+// 作用：飞控经过数学姿态解算后输出的“机身倾角”（统一弧度制 [rad]）
 typedef struct {
-    float roll;      // 横滚角 (rad)：向右歪为正 (+)
-    float pitch;     // 俯仰角 (rad)：机头翘起（抬头）为正 (+)
-    float yaw;       // 航向角 (rad)：顺时针右转为正 (+)
+    float roll;      // 横滚角 [rad]：向右歪为正 (+)
+    float pitch;     // 俯仰角 [rad]：机头翘起（抬头）为正 (+)
+    float yaw;       // 航向角 [rad]：顺时针右转为正 (+)
 } EulerAngle_t;
 
 // 5. 定义遥控器指令帧：
 // 作用：把手机/手柄发送过来的网络数据，打包转化为飞控理解的控制目标
 typedef struct {
-    float throttle;         // 油门大小（0.0 代表关机，1.0 代表 100% 满推力）
-    float roll_target;      // 期望横滚角 (rad)：右倾为正 (+)
-    float pitch_target;     // 期望俯仰角 (rad)：抬头为正 (+)
-    float yaw_rate_target;  // 期望偏航角速度 (rad/s)：顺时针右转为正 (+)
+    float throttle;         // 油门归一化推力 [0.0, 1.0]（0.0 代表关机，1.0 代表 100% 满推力）
+    float roll_target;      // 期望横滚角 [rad]：右倾为正 (+)
+    float pitch_target;     // 期望俯仰角 [rad]：抬头为正 (+)
+    float yaw_rate_target;  // 期望偏航角速度 [rad/s]：顺时针右转为正 (+)
     bool  armed;            // 安全锁：true=已解锁允许电机转；false=锁定，哪怕推油门也不转
 } ControlCommand_t;
 
 // 6. 定义电机混控输出：
-// 作用：把姿态修正量分配后，最终下发给 4 个电机的 PWM 占空比比例（0.0~1.0）
+// 作用：把姿态修正量分配后，最终下发给 4 个电机的 PWM 归一化占空比比例 [0.0, 1.0]
 typedef struct {
-    float m1; // 右前电机 (逆时针 CCW)
-    float m2; // 右后电机 (顺时针 CW)
-    float m3; // 左后电机 (逆时针 CCW)
-    float m4; // 左前电机 (顺时针 CW)
+    float m1; // 右前电机 (逆时针 CCW)，PWM 占空比 [0.0, 1.0]
+    float m2; // 右后电机 (顺时针 CW)，PWM 占空比 [0.0, 1.0]
+    float m3; // 左后电机 (逆时针 CCW)，PWM 占空比 [0.0, 1.0]
+    float m4; // 左前电机 (顺时针 CW)，PWM 占空比 [0.0, 1.0]
 } MotorOutput_t;
