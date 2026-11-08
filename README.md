@@ -103,9 +103,9 @@
 | P0 选型/BOM | ✅ 完成 |
 | P1 硬件 | 🟡 板框 v8 已有，**电机位待改配 φ8.6 8520 孔位** |
 | P2 软件环境 | ✅ `platformio.ini`（N16R8 `espressif32@6.9.0`）、`config.h` 与全仓工程骨架就绪 |
-| P3 驱动与通信 | 🟡 `mpu6050`、`qmc5883p`、`motor_out`、`vbat`、`status_led`（WS2812 五态/校准灯语）、`ble_server`、`protocol.h`（13B/19B + CRC-8）代码就绪；待终端 `pio run` 编译与上板台架实测 |
-| P4 算法+单测 | 🟡 串级 PID 总控 `controller.h`（80Hz/40Hz LPF + Mahony + 200 拍开机静置标定 + 分级倾角救机 + 怠速连续映射 + 实测 `dt` 钳位）与 7 套 C 桌面单测已清理重编全绿；待 `pio` 编译与实机调参 |
-| P5 双核编排 | 🟡 `main.cpp`（Core1 400Hz `esp_timer` 精准唤醒 + Core0 BLE/20Hz 遥测/状态灯）已落地；待 `pio run` 编译烧录实测 |
+| P3 驱动与通信 | ✅ `mpu6050`、`qmc5883p`、`motor_out`、`vbat`、`status_led`（WS2812 五态/校准灯语）、`ble_server`、`protocol.h` 全部落盘并通过 PlatformIO 固件编译 |
+| P4 算法+单测 | ✅ 串级 PID 总控 `controller.h`（80Hz/40Hz LPF + Mahony + 200 拍自动标定 + 分级救机 + 实测 `dt` 钳位）、7 套 C 桌面单测与固件构建全部全绿 |
+| P5 双核编排 | ✅ `main.cpp`（Core1 400Hz `esp_timer` 硬件触发 + Core0 20Hz BLE/遥测/状态灯）已完成并成功生成 `firmware.bin` 固件镜像；待硬件上板烧录 |
 | P6 调试与地面站 | ✅ 极简横屏双拇指触屏地面站（相对位移 1:1 摇杆、0.6s 长按解锁、原生 `<dialog>` 弹窗、E-04 切后台/断连强制归零、物理手柄增量/直映防暴冲、1:1 离线飞控仿真器）已通过全链路 Node 单测；待实机联调调参 |
 | P7–P9 | ⬜ 未开始 |
 
