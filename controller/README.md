@@ -4,7 +4,7 @@
 
 | 主操控界面（人工地平仪 / 实时电压 / 双拇指触控摇杆） | 设置与仿真测试弹窗（原生 `<dialog>` / 极简操作） |
 |:---:|:---:|
-| ![地面站主界面](../docs/images/controller-cockpit.png) | ![设置与仿真面板](../docs/images/controller-dialog.png) |
+| ![地面站主界面](../docs/images/controller-cockpit.jpg) | ![设置与仿真面板](../docs/images/controller-dialog.jpg) |
 
 ---
 
