@@ -62,7 +62,7 @@
 | M3 左后 | GPIO3 | LEDC CH2 |
 | M4 左前 | GPIO4 | LEDC CH3 |
 | VBAT | GPIO5 | ADC1_CH4（100k/100k 分压） |
-| 解锁开关 | GPIO10 | 拨动开关（可选，App 也可解锁） |
+| 解锁开关（预留） | GPIO10 | 固件尚未读取此引脚；当前通过地面站解锁 |
 | 状态灯 | GPIO48 | 板载 RGB（若未引出则用外接 LED） |
 | USB | GPIO19/20 | 原生 USB，**勿占用** |
 | 串口调试 | GPIO43/44 | USB 串口（UART0） |

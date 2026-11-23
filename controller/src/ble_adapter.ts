@@ -74,6 +74,7 @@ interface CapacitorBleClientLike {
 
 export class UavBleController {
   private mode: ConnectionMode = 'disconnected';
+  private connectionEpoch = 0; // 使已取消连接的异步结果失效
   private deviceName = '未连接';
   private callbacks: BleAdapterCallbacks;
 
@@ -140,18 +141,20 @@ export class UavBleController {
   public async connectBle(): Promise<void> {
     this.disconnect();
     this.setMode('connecting', '正在搜索 UAV-ESP32S3...');
+    const epoch = this.connectionEpoch;
 
     const cap = (globalThis as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
     const isNativeApp = Boolean(cap && typeof cap.isNativePlatform === 'function' && cap.isNativePlatform());
 
     try {
       if (isNativeApp) {
-        await this.connectCapacitorNative();
+        await this.connectCapacitorNative(epoch);
       } else {
-        await this.connectWebBluetooth();
+        await this.connectWebBluetooth(epoch);
       }
     } catch (err: unknown) {
-      this.setMode('disconnected', '未连接');
+      if (epoch !== this.connectionEpoch) return;
+      this.disconnect();
       const msg = err instanceof Error ? err.message : String(err);
       if (!msg.includes('cancelled') && !msg.includes('User cancelled')) {
         this.callbacks.onError(`蓝牙连接失败: ${msg}`);
@@ -160,7 +163,7 @@ export class UavBleController {
   }
 
   /**
-   * 开启离线飞控闭环仿真模式（100% 复现 firmware/src/flight/safety.h 与 mixer.h 行为）
+   * 开启离线交互仿真，验证安全状态与混控规则（姿态动力学为简化模型）
    */
   public startSimulator(): void {
     this.disconnect();
@@ -170,6 +173,7 @@ export class UavBleController {
   }
 
   public disconnect(): void {
+    this.connectionEpoch++;
     this.stop50HzLoop();
 
     // 先清空当前设备引用再调用底层 disconnect()，防止异步 gattserverdisconnected 回调误报异常断链弹窗
@@ -242,7 +246,10 @@ export class UavBleController {
     }
   }
 
-  private async connectWebBluetooth(): Promise<void> {
+  private async connectWebBluetooth(epoch: number): Promise<void> {
+    if (globalThis.isSecureContext === false) {
+      throw new Error('蓝牙连接需要 HTTPS 或本机 localhost。手机访问电脑局域网 HTTP 地址仅可用于界面与仿真调试。');
+    }
     const navBle = (
       navigator as unknown as {
         bluetooth?: {
@@ -261,6 +268,7 @@ export class UavBleController {
       filters: [{ services: [UAV_BLE_SERVICE_UUID] }, { namePrefix: 'UAV-' }],
       optionalServices: [UAV_BLE_SERVICE_UUID],
     });
+    if (epoch !== this.connectionEpoch) return;
 
     if (!device.gatt) {
       throw new Error('未找到设备 GATT 服务接口。');
@@ -278,11 +286,19 @@ export class UavBleController {
     });
 
     const server = await device.gatt.connect();
+    if (epoch !== this.connectionEpoch) {
+      if (this.webDevice !== device && device.gatt.connected) device.gatt.disconnect();
+      return;
+    }
     const service = await server.getPrimaryService(UAV_BLE_SERVICE_UUID);
     const ctrlChar = await service.getCharacteristic(UAV_BLE_CHAR_CTRL_UUID);
     const telemChar = await service.getCharacteristic(UAV_BLE_CHAR_TELEM_UUID);
 
     await telemChar.startNotifications();
+    if (epoch !== this.connectionEpoch) {
+      if (this.webDevice !== device && device.gatt.connected) device.gatt.disconnect();
+      return;
+    }
     telemChar.addEventListener('characteristicvaluechanged', (ev: Event) => {
       if (this.webDevice !== device) return;
       const target = ev.target as unknown as WebBleCharacteristic | null;
@@ -299,14 +315,16 @@ export class UavBleController {
     this.start50HzLoop();
   }
 
-  private async connectCapacitorNative(): Promise<void> {
+  private async connectCapacitorNative(epoch: number): Promise<void> {
     const { BleClient } = await import('@capacitor-community/bluetooth-le');
     await BleClient.initialize();
+    if (epoch !== this.connectionEpoch) return;
 
     const device = await BleClient.requestDevice({
       services: [UAV_BLE_SERVICE_UUID],
       namePrefix: 'UAV-',
     });
+    if (epoch !== this.connectionEpoch) return;
 
     this.capBle = BleClient;
     this.capDeviceId = device.deviceId;
@@ -318,6 +336,10 @@ export class UavBleController {
       this.setMode('disconnected', '连接已断开');
       this.callbacks.onError('飞控蓝牙连接已断开！');
     });
+    if (epoch !== this.connectionEpoch) {
+      if (this.capDeviceId !== device.deviceId) await BleClient.disconnect(device.deviceId);
+      return;
+    }
 
     // 原生 Android 端主动请求 HIGH 连接优先级（1 = CONNECTION_PRIORITY_HIGH, 7.5ms~11.25ms 超低延迟间隔）
     try {
@@ -338,6 +360,7 @@ export class UavBleController {
         }
       }
     );
+    if (epoch !== this.connectionEpoch) return;
 
     this.setMode('ble-native', device.name || UAV_BLE_DEVICE_NAME);
     this.start50HzLoop();
@@ -416,7 +439,7 @@ export class UavBleController {
   }
 
   /**
-   * 内部高保真飞控状态机与混控仿真（严格复刻 safety.h 与 mixer.h）
+   * 安全状态与混控交互仿真，复用协议编解码通道
    */
   private stepSimulator(input: ControlInputState): void {
     const simRes = this.sim.step(input);

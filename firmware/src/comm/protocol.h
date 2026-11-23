@@ -214,6 +214,13 @@ static inline void protocol_pack_control(const ControlCommand_t *cmd,
     out_pkt->header[1] = PROTOCOL_CTRL_HEADER_1;
     out_pkt->seq       = seq;
 
+    if (!isfinite(cmd->throttle) || !isfinite(cmd->roll_target) ||
+        !isfinite(cmd->pitch_target) || !isfinite(cmd->yaw_rate_target)) {
+        out_pkt->flags = PROTOCOL_FLAG_KILL;
+        out_pkt->crc8 = protocol_crc8((const uint8_t *)out_pkt, PROTOCOL_CTRL_FRAME_SIZE - 1U);
+        return;
+    }
+
     uint8_t flags = extra_flags & ~(uint8_t)PROTOCOL_FLAG_ARMED;
     if (cmd->armed) {
         flags = (uint8_t)(flags | PROTOCOL_FLAG_ARMED);
@@ -253,12 +260,14 @@ static inline void protocol_pack_control(const ControlCommand_t *cmd,
 // 6. 遥测帧打包函数（飞控 -> 手柄）
 // ============================================================================
 static inline int16_t protocol_clamp_i16(float val) {
+    if (!isfinite(val)) return 0;
     if (val >  32767.0f) return  32767;
     if (val < -32768.0f) return -32768;
     return (int16_t)roundf(val);
 }
 
 static inline uint8_t protocol_motor_to_pct(float m) {
+    if (!isfinite(m)) return 0U;
     if (m <= 0.0f) return 0U;
     if (m >= 1.0f) return 100U;
     return (uint8_t)(m * 100.0f + 0.5f);
@@ -279,7 +288,7 @@ static inline void protocol_pack_telemetry(uint8_t seq,
     out_pkt->state     = (uint8_t)state;
 
     // 电池电压 V -> mV
-    if (vbat_v < 0.0f) vbat_v = 0.0f;
+    if (!isfinite(vbat_v) || vbat_v < 0.0f) vbat_v = 0.0f;
     if (vbat_v > 65.5f) vbat_v = 65.5f;
     out_pkt->vbat_mv = (uint16_t)(vbat_v * 1000.0f + 0.5f);
 

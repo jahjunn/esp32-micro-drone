@@ -10,10 +10,10 @@
 
 | 能力 | 是否支持 |
 |------|----------|
-| 姿态自稳（不翻） | ✅ |
-| 航向锁定（磁力计） | ✅ |
-| BLE 手动飞行（10–20m，50Hz 低延迟） | ✅ |
-| 短时小范围悬停（会缓慢漂移） | ✅ |
+| 姿态自稳 | 算法与桌面测试已有，待台架及实飞验证 |
+| 航向锁定（磁力计） | ⏳ 驱动已有，尚未接入姿态融合；当前仅控制偏航角速度 |
+| BLE 手动飞行 | 通信链路已有；50Hz 为发送目标，距离与延迟待实测 |
+| 短时小范围悬停（会缓慢漂移） | ⏳ 本期目标，待实机验证 |
 | 定高 / 定点 / 定距移动 | ❌（P8 扩展） |
 | 抗风 / 自动航线 | ❌ |
 
@@ -39,13 +39,13 @@
   - Core1：400Hz 实时控制（读 IMU → LPF → Mahony → 串级 PID → Quad-X → PWM）
   - Core0：BLE GATT 50Hz 控制下行 / 10–20Hz 遥测上行（`portMUX` 跨核零积压同步）、安全监控、状态灯
 - **通信协议**：13B 下行控制帧（`0xAA 0x55`）+ 19B 上行遥测帧（`0x55 0xAA`），小端序紧凑二进制 + CRC-8 校验
-- **算法**：二阶巴特沃斯 LPF（30–50Hz）+ Mahony 四元数 + 串级 PID + 保均值抗饱和 Quad-X 混控
+- **算法**：二阶巴特沃斯 LPF（陀螺80Hz / 加计40Hz）+ Mahony 四元数 + 串级 PID + 保均值抗饱和 Quad-X 混控
 - **输出**：LEDC 4× PWM，20kHz / 10bit
-- **安全**：五态安全状态机（失联 500ms / 倾角 >60° 触发 Sticky Failsafe 锁死、3.5V 一级低压告警、3.3V 二级低压自动回平缓降、解锁四重联锁、电机总闸门 + 物理急停）
+- **安全**：五态安全状态机（失联 500ms / 倾角分级救机与 Sticky Failsafe 锁死、3.5V 一级低压告警、3.3V 二级低压自动回平缓降、解锁四重联锁、电机总闸门 + 物理急停）
 
 ## 移动端触屏地面站界面
 
-极简横屏双拇指 Web 地面站（支持 Android Chrome/Edge 浏览器、实体手柄接入与 1:1 离线飞控仿真器）：
+极简横屏双拇指 Web 地面站（支持 Android Chrome/Edge 浏览器、实体手柄接入与安全状态/混控离线仿真）：
 
 | 主操控界面（人工地平仪 / 实时电压 / 双拇指摇杆） | 设置与仿真测试弹窗（原生 `<dialog>` / 零死区触控） |
 |:---:|:---:|
@@ -62,7 +62,7 @@
 │   ├── BOM.md             # 物料清单
 │   └── ERRATA.md          # 代码审查纠错与验收台账
 ├── hardware/              # 板框 DXF 与生成脚本（v1–v8）
-├── firmware/              # 机载固件（ESP32-S3 双核飞控、外设驱动、BLE 通信与 7 套 C 桌面单测）
+├── firmware/              # 机载固件（ESP32-S3 双核飞控、外设驱动、BLE 通信与 8 套 C 桌面单测）
 │   ├── platformio.ini     # N16R8 编译与分区配置（锁定 espressif32@6.9.0）
 │   ├── src/
 │   │   ├── config.h       # 全板引脚、20kHz LEDC PWM、400kHz I²C 与采样周期配置
@@ -70,8 +70,8 @@
 │   │   ├── drivers/       # 硬件驱动（mpu6050 / qmc5883p / motor_out / vbat / status_led）
 │   │   ├── flight/        # 飞控算法（types / biquad_lpf / mahony / pid / mixer / safety / controller）
 │   │   └── comm/          # BLE GATT 服务端与二进制协议（protocol.h / ble_server.*）
-│   └── test/              # 桌面侧单元测试（7 套带强断言 CHECK() 的 C 测试）
-└── controller/            # 移动端触屏地面站（Mode-2 1:1 相对位移双摇杆 + Gamepad + Web Bluetooth + 1:1 仿真器）
+│   └── test/              # 桌面侧单元测试（8 套带强断言 CHECK() 的 C 测试）
+└── controller/            # 移动端触屏地面站（Mode-2 相对位移双摇杆 + Gamepad + Web Bluetooth + 离线仿真）
 ```
 
 ## 快速开始
@@ -81,7 +81,7 @@
 1. 阅读 `docs/ARCHITECTURE.md` 了解方案；
 2. 按 `docs/BOM.md` 采购；
 3. 按 `docs/WORKPLAN.md` 与 `docs/ERRATA.md` 逐项验收；
-4. 运行地面站自检并启动本地/局域网手机调试服务（PowerShell）：
+4. 使用 Node.js 24 运行地面站自检并启动开发服务（手机局域网 HTTP 仅用于界面与仿真，真实 BLE 连接见 `controller/README.md`）：
    ```powershell
    D:\Nodejs\node.exe controller/test/verify_protocol.mjs
    D:\Nodejs\node.exe controller/test/verify_controller.mjs
@@ -104,9 +104,9 @@
 | P1 硬件 | 🟡 板框 v8 已有，**电机位待改配 φ8.6 8520 孔位** |
 | P2 软件环境 | ✅ `platformio.ini`（N16R8 `espressif32@6.9.0`）、`config.h` 与全仓工程骨架就绪 |
 | P3 驱动与通信 | ✅ `mpu6050`、`qmc5883p`、`motor_out`、`vbat`、`status_led`（WS2812 五态/校准灯语）、`ble_server`、`protocol.h` 全部落盘并通过 PlatformIO 固件编译 |
-| P4 算法+单测 | ✅ 串级 PID 总控 `controller.h`（80Hz/40Hz LPF + Mahony + 200 拍自动标定 + 分级救机 + 实测 `dt` 钳位）、7 套 C 桌面单测与固件构建全部全绿 |
+| P4 算法+单测 | ✅ 串级 PID 总控 `controller.h`（80Hz/40Hz LPF + Mahony + 200 拍自动标定 + 分级救机 + 实测 `dt` 钳位）、8 套 C 桌面单测与固件构建全部全绿 |
 | P5 双核编排 | ✅ `main.cpp`（Core1 400Hz `esp_timer` 硬件触发 + Core0 20Hz BLE/遥测/状态灯）已完成并成功生成 `firmware.bin` 固件镜像；待硬件上板烧录 |
-| P6 调试与地面站 | ✅ 极简横屏双拇指触屏地面站（相对位移 1:1 摇杆、0.6s 长按解锁、原生 `<dialog>` 弹窗、E-04 切后台/断连强制归零、物理手柄增量/直映防暴冲、1:1 离线飞控仿真器）已通过全链路 Node 单测；待实机联调调参 |
+| P6 调试与地面站 | 🟡 地面站与安全状态/混控仿真已通过 Node 单测；实机联调与调参待完成 |
 | P7–P9 | ⬜ 未开始 |
 
 详见 `docs/WORKPLAN.md` 与 `docs/ERRATA.md`。

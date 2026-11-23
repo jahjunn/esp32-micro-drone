@@ -28,10 +28,12 @@
 #define CTRL_ACCEL_LPF_CUTOFF_HZ  40.0f                          // 加速度计二阶巴特沃斯截止频率 [Hz]
 #define CTRL_VBAT_LPF_ALPHA       0.02f                          // 电池电压一阶滤波系数 [无量纲]
 #define CTRL_MAX_MIX_THROTTLE     (1.0f - SAFETY_ARM_MAX_THROTTLE) // 0.95 [norm]：满油门保留 5% 差动余量，避免姿态控制失效
+#define CTRL_AUTH_FULL_THROTTLE   0.15f                          // [F-06] 油门自 5% 起线性渐入姿态力矩权限，15% 起给满 100% 差动权限
 
 // 陀螺仪开机静止校准参数
 #define CTRL_GYRO_CAL_SAMPLES     200U                           // 静止采样 200 拍（400Hz 下为 0.5 秒）
-#define CTRL_GYRO_CAL_MOTION_RAD  0.25f                          // 校准期间最大允许峰峰值 [rad/s]（≈14.3°/s，容忍桌面微振但拦截手拿晃动）
+#define CTRL_GYRO_CAL_MOTION_RAD  0.15f                          // 校准期间最大允许峰峰值 [rad/s]
+#define CTRL_IMU_FAILURE_SAMPLES 40U                            // 连续 40 拍无效 IMU 数据触发锁存急停（名义 100ms）
 
 typedef struct {
     // 传感器三轴二阶巴特沃斯低通滤波器（0:X, 1:Y, 2:Z）
@@ -69,6 +71,7 @@ typedef struct {
 
     // 节拍计数器
     uint32_t     tick;
+    uint16_t     invalid_imu_samples; // 连续无效完整 IMU 帧数（饱和计数）
 } FlightController_t;
 
 // 内部辅助：检查三维向量是否全部为合法有限浮点数（防 NaN / Inf 污染滤波器）
@@ -123,13 +126,15 @@ static inline void controller_init(FlightController_t *fc) {
     pid_init(&fc->angle_roll_pid,  4.5f, 0.0f, 0.0f, 0.0f, 5.0f);
     pid_init(&fc->angle_pitch_pid, 4.5f, 0.0f, 0.0f, 0.0f, 5.0f);
 
-    // 内环 400Hz 角速度 PID 参数（内环带宽约为外环角度环的 3 倍，消除相位滞后超调）
-    pid_init(&fc->rate_roll_pid,   0.25f, 0.08f, 0.004f, 0.20f, 0.40f);
-    pid_init(&fc->rate_pitch_pid,  0.25f, 0.08f, 0.004f, 0.20f, 0.40f);
+    // 内环 400Hz 角速度 PID 参数（内环带宽约为外环角度环的 3 倍，消除相位滞后超调；
+    // [F-05] Roll/Pitch 积分限幅设为 1.20（i_term 上限 0.096 ≈ 24% 出力），足以配平 2mm 重心偏心）
+    pid_init(&fc->rate_roll_pid,   0.25f, 0.08f, 0.004f, 1.20f, 0.40f);
+    pid_init(&fc->rate_pitch_pid,  0.25f, 0.08f, 0.004f, 1.20f, 0.40f);
     pid_init(&fc->rate_yaw_pid,    0.25f, 0.10f, 0.000f, 0.20f, 0.30f);
 
     controller_reset_pids(fc);
     fc->tick = 0U;
+    fc->invalid_imu_samples = 0U;
 }
 
 // 手动直接指定陀螺仪零偏 [rad/s] 并标记已校准（供桌面单元测试或预存校准值使用）
@@ -151,6 +156,7 @@ static inline bool controller_calibrate_gyro_sample(FlightController_t *fc, Vect
         return true;
     }
     if (!controller_vec3_is_finite(raw_gyro_frd)) {
+        controller_reset_gyro_cal(fc);
         return false;
     }
 
@@ -190,9 +196,10 @@ static inline bool controller_calibrate_gyro_sample(FlightController_t *fc, Vect
     return false;
 }
 
-// 将正面朝上贴装的 MPU6050 芯片原始读数（FLU: +X前, +Y左, +Z上）转换为飞控标准 FRD 右手系
+// MPU6050 原始 FLU -> FRD：角速度按旋转映射；加计额外取反，输出供 Mahony 使用的重力观测 -f。
+// 因此 accel_frd 不是原始比力 f：静止平放为 {0,0,+1}，转换结果为 {-ax,+ay,+az}。
 //   - gyro_flu  / gyro_frd  : 角速度 [rad/s]
-//   - accel_flu / accel_frd : 比力加速度 [g]
+//   - accel_flu : 原始比力 [g]；accel_frd : FRD 重力观测 -f [g]
 static inline void controller_map_flu_to_frd(Vector3_t gyro_flu,
                                              Vector3_t accel_flu,
                                              Vector3_t *gyro_frd,
@@ -208,7 +215,7 @@ static inline void controller_map_flu_to_frd(Vector3_t gyro_flu,
 
 // 飞控 400Hz 核心步进函数（支持实测循环周期 dt_sec 传入，内部钳位至 [0.5, 1.5] * CTRL_DT）
 //   - raw_gyro_frd  : FRD 角速度 [rad/s]
-//   - raw_accel_frd : FRD 比力加速度 [g]
+//   - raw_accel_frd : FRD 重力观测 -f [g]（静止平放 +Z=+1）
 //   - vbat_v        : 电池电压 [V]
 //   - cmd_age_ms    : 遥控帧距今耗时 [ms]
 //   - dt_sec        : 实测本拍控制周期 [s]
@@ -228,21 +235,43 @@ static inline FlightState_t controller_step_dt(FlightController_t *fc,
     if (dt < dt_min) dt = dt_min;
     if (dt > dt_max) dt = dt_max;
 
-    // 【防线 1：NaN / Inf 脏传感器数据拦截】
-    if (!controller_vec3_is_finite(raw_gyro_frd) || !controller_vec3_is_finite(raw_accel_frd)) {
-        Vector3_t safe_accel = {0.0f, 0.0f, 1.0f};
-        raw_gyro_frd  = fc->gyro_bias;
+    // 【防线 1：NaN / Inf 脏传感器数据拦截 + 采样有效性标记 (F-02)】
+    bool gyro_valid   = controller_vec3_is_finite(raw_gyro_frd);
+    bool accel_valid  = controller_vec3_is_finite(raw_accel_frd);
+    bool sample_valid = gyro_valid && accel_valid;
+    if (sample_valid) {
+        fc->invalid_imu_samples = 0U;
+    } else if (fc->invalid_imu_samples < CTRL_IMU_FAILURE_SAMPLES) {
+        fc->invalid_imu_samples++;
+    }
+    // 禁止在 IMU 故障期间解锁；故障恢复也必须由飞手先上锁解除 FAILSAFE。
+    if (fc->invalid_imu_samples >= CTRL_IMU_FAILURE_SAMPLES && cmd.armed) {
+        fc->safety.state = FLIGHT_STATE_FAILSAFE;
+    }
+    if (!gyro_valid) {
+        raw_gyro_frd = fc->gyro_bias;
+    }
+    if (!accel_valid) {
+        Vector3_t safe_accel = {
+            (fc->tick > 0U) ? fc->accel_lpf[0].y1 : 0.0f,
+            (fc->tick > 0U) ? fc->accel_lpf[1].y1 : 0.0f,
+            (fc->tick > 0U) ? fc->accel_lpf[2].y1 : 1.0f
+        };
         raw_accel_frd = safe_accel;
     }
 
-    // 【防线 2：如果陀螺仪尚未完成开机静止校准，自动喂入校准器并禁止解锁】
+    // 【防线 2：如果陀螺仪尚未完成开机静止校准，仅采信有效陀螺帧喂入校准器并禁止解锁】
     if (!fc->gyro_calibrated) {
-        controller_calibrate_gyro_sample(fc, raw_gyro_frd);
+        if (sample_valid) {
+            controller_calibrate_gyro_sample(fc, raw_gyro_frd);
+        } else {
+            controller_reset_gyro_cal(fc);
+        }
         cmd.armed = false;
     }
 
     // 【防线 3：电池电压一阶低通滤波（防大电流脉冲毛刺误触发 LOWBAT_LAND 锁存）】
-    if (isfinite(vbat_v) && vbat_v > 0.1f) {
+    if (isfinite(vbat_v) && vbat_v >= 0.0f) {
         if (fc->vbat_filtered <= 0.1f) {
             fc->vbat_filtered = vbat_v;
         } else {
@@ -271,8 +300,13 @@ static inline FlightState_t controller_step_dt(FlightController_t *fc,
 
     // 【步骤 2：400Hz 更新 Mahony 姿态解算】
     // 地面上锁阶段用高增益 (Kp=10.0) 快速对齐桌面真实水平；解锁飞行后切回标准增益 (Kp=2.0) 抗加减速干扰
+    // [F-02] 若本拍采样含 NaN (!sample_valid)，仅靠陀螺仪积分推演，绝不用替代加速度假水平拉偏姿态
     fc->ahrs.kp = (fc->safety.state == FLIGHT_STATE_LOCKED) ? 10.0f : 2.0f;
-    mahony_update_imu(&fc->ahrs, gyro_filt, accel_filt, dt);
+    if (sample_valid) {
+        mahony_update_imu(&fc->ahrs, gyro_filt, accel_filt, dt);
+    } else {
+        mahony_update_gyro_only(&fc->ahrs, gyro_filt, dt);
+    }
     mahony_to_euler(&fc->ahrs, &fc->attitude);
 
     // 【步骤 3：过安全状态机（传入滤波后的稳定电池电压）】
@@ -296,6 +330,7 @@ static inline FlightState_t controller_step_dt(FlightController_t *fc,
         out_motors->m2 = MOTOR_IDLE_DEFAULT;
         out_motors->m3 = MOTOR_IDLE_DEFAULT;
         out_motors->m4 = MOTOR_IDLE_DEFAULT;
+        safety_apply_motor_gate(&fc->safety, out_motors);
         fc->tick++;
         return state;
     }
@@ -331,12 +366,19 @@ static inline FlightState_t controller_step_dt(FlightController_t *fc,
                                                 gyro_filt.z,
                                                 dt);
 
-    // 【步骤 7：油门连续映射 + Quad-X 混控 + 12% 怠速保底 + 电机安全总闸门】
+    // 【步骤 7：油门连续映射 + 差动权限渐入 (F-06) + Quad-X 混控 + 12% 怠速保底 + 电机安全总闸门】
     // 将有效油门 (0.05, 1.0] 线性映射至 (0.0, CTRL_MAX_MIX_THROTTLE]：
     // 既在 5% 处精确衔接 12% 怠速（零跳变），又在 100% 处保留 5% 姿态差动余量
-    float norm_thr = (cmd.throttle - SAFETY_ARM_MAX_THROTTLE) / (1.0f - SAFETY_ARM_MAX_THROTTLE);
+    float norm_thr     = (cmd.throttle - SAFETY_ARM_MAX_THROTTLE) / (1.0f - SAFETY_ARM_MAX_THROTTLE);
     float mix_throttle = clampf(norm_thr, 0.0f, 1.0f) * CTRL_MAX_MIX_THROTTLE;
-    mixer_quad_x(mix_throttle, roll_torque, pitch_torque, yaw_torque, out_motors);
+    float auth         = clampf((cmd.throttle - SAFETY_ARM_MAX_THROTTLE) /
+                                (CTRL_AUTH_FULL_THROTTLE - SAFETY_ARM_MAX_THROTTLE),
+                                0.0f, 1.0f);
+    mixer_quad_x(mix_throttle,
+                 roll_torque * auth,
+                 pitch_torque * auth,
+                 yaw_torque * auth,
+                 out_motors);
     mixer_apply_idle(out_motors, MOTOR_IDLE_DEFAULT);
     safety_apply_motor_gate(&fc->safety, out_motors);
 

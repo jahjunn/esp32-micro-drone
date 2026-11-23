@@ -22,6 +22,7 @@ export const CTRL_TILT_HALF_DEG = 12.5;
 export const CTRL_TRIM_MAX_DEG = 5.0;
 export const CTRL_TRIM_STEP_DEG = 0.2;
 export const MOTOR_IDLE_DEFAULT = 0.12;
+export const CTRL_AUTH_FULL_THROTTLE = 0.15;
 
 export const SAFETY_MAX_TILT_RAD = (60.0 * Math.PI) / 180.0;
 export const SAFETY_TILT_RECOVER_OK_RAD = (45.0 * Math.PI) / 180.0;
@@ -335,7 +336,8 @@ export interface SimStepResult {
 }
 
 /**
- * 1:1 复刻 firmware/src/flight/safety.h + controller.h + mixer.h 行为的 50Hz 离线仿真器
+ * 对齐安全状态与混控规则的 50Hz 交互仿真器。
+ * 姿态响应为简化模型，未运行固件 AHRS、串级 PID、传感器故障和电池 LPF。
  */
 export class QuadSimulator {
   public state: FlightState = FlightState.LOCKED;
@@ -492,12 +494,17 @@ export class QuadSimulator {
     } else {
       const normThr = clamp((effThrottle - SAFETY_ARM_MAX_THROTTLE) / (1.0 - SAFETY_ARM_MAX_THROTTLE), 0.0, 1.0);
       const mixThr = normThr * (1.0 - SAFETY_ARM_MAX_THROTTLE);
+      const auth = clamp(
+        (effThrottle - SAFETY_ARM_MAX_THROTTLE) / (CTRL_AUTH_FULL_THROTTLE - SAFETY_ARM_MAX_THROTTLE),
+        0.0,
+        1.0
+      );
 
       const rTorque = clamp(effRoll * 0.10 + ((targetRollDeg - this.rollDeg) / 25.0) * 0.22, -0.40, 0.40);
       const pTorque = clamp(effPitch * 0.10 + ((targetPitchDeg - this.pitchDeg) / 25.0) * 0.22, -0.40, 0.40);
       const yTorque = clamp(effYaw * 0.15, -0.30, 0.30);
 
-      const rawMotors = mixerQuadX(mixThr, rTorque, pTorque, yTorque);
+      const rawMotors = mixerQuadX(mixThr, rTorque * auth, pTorque * auth, yTorque * auth);
       motors = mixerApplyIdle(rawMotors, MOTOR_IDLE_DEFAULT);
 
       if (!holdTiltForTest) {

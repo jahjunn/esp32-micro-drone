@@ -42,12 +42,10 @@
 #define UAV_CORE_COMM         0       // Core0：BLE GATT + 遥测推送 + 状态灯
 #define UAV_CORE_CTRL         1       // Core1：400Hz 实时惯导采样 + 串级 PID + 混控 PWM
 
-#define CTRL_LOOP_PERIOD_US   2500ULL // 400 Hz = 2500 us 硬件高精度周期定时器
-#define CTRL_DT_MIN_SCALE     0.5f    // 实测 dt 下限钳位 (0.5 * 2.5ms = 1.25ms)
-#define CTRL_DT_MAX_SCALE     1.5f    // 实测 dt 上限钳位 (1.5 * 2.5ms = 3.75ms)
+#define CTRL_LOOP_PERIOD_US        2500ULL // 400 Hz = 2500 us 硬件高精度周期定时器
+#define CTRL_HEARTBEAT_TIMEOUT_MS  200U    // [F-01] Core1 控制环心跳超时阈值：200 ms (= 80 个控制拍)
 
-#define TELEM_TASK_PERIOD_MS  50U     // Core0 遥测上行频率：20 Hz
-#define LED_TASK_PERIOD_MS    50U     // Core0 状态灯刷新频率：20 Hz（支持 1~10Hz 各类告警闪烁）
+#define TELEM_TASK_PERIOD_MS       50U     // Core0 遥测上行频率：20 Hz
 
 // ==================== 6. 串口调试配置 ====================
 #define SERIAL_BAUD_RATE      115200UL

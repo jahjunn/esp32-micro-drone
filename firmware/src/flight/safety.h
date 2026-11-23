@@ -19,7 +19,7 @@
 #define SAFETY_TILT_RECOVER_OK_RAD       (45.0f  * ((float)M_PI / 180.0f))   // 救机退出滞回角：45 度（防止撞墙/阵风在 60° 边界反弹清零计时器）
 #define SAFETY_EXTREME_TILT_RAD          (110.0f * ((float)M_PI / 180.0f))   // 二级极端翻机角：110 度（彻底倒扣，单拍急停锁死）
 #define SAFETY_TILT_GRACE_TICKS          320U                                // 救机宽限期：320 拍（基于 400Hz 控制环路 = 0.8 秒）
-#define SAFETY_TILT_RECOVER_MAX_THROTTLE 0.45f                               // 救机油门上限：45%（映射后 mix=0.40 匹配内环力矩上限且≈悬停推力，防掉高与横冲）
+#define SAFETY_TILT_RECOVER_MAX_THROTTLE 0.45f                               // 救机油门上限：45%，不代表已标定的悬停推力
 #define SAFETY_VBAT_WARN_V               3.50f                               // 一级低压报警 & 地面最低解锁电压：3.5V
 #define SAFETY_VBAT_LAND_V               3.30f                               // 二级严重低压强制缓降电压：3.3V
 #define SAFETY_ARM_MAX_THROTTLE          0.05f                               // 解锁允许的最大油门：5%（防暴冲）

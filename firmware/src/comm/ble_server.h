@@ -52,6 +52,10 @@ bool ble_comm_send_telemetry(FlightState_t state,
 // 4. 获取当前 BLE 通信统计状态
 void ble_comm_get_stats(BleCommStats_t *out_stats);
 
+// 5. Core0 周期任务轮询入口 [F-03]：在普通 FreeRTOS 任务上下文中安全处理断连重广播，
+//    避免直接在 Bluedroid GATT 回调内调 BLEDevice::startAdvertising() 卡死协议栈
+void ble_comm_poll(void);
+
 #ifdef __cplusplus
 }
 #endif

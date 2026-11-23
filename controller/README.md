@@ -53,13 +53,15 @@ node controller/test/verify_protocol.mjs
 node controller/dev_server.mjs
 ```
 
-随后用电脑或安卓手机的 **Chrome / Edge 浏览器** 打开 `http://localhost:5173`（手机与电脑同局域网时可访问电脑局域网 IP）。
+电脑可用 Chrome / Edge 打开 `http://localhost:5173`。手机访问电脑局域网 HTTP 地址可调试界面与离线仿真；真实 Web Bluetooth 连接需要手机信任证书的 HTTPS 页面，或使用 Capacitor 原生 App。手机上的 `localhost` 指手机本身。
+
+Web Bluetooth 的安全上下文要求见 [Chrome 官方文档](https://developer.chrome.com/docs/capabilities/bluetooth#https_only)。
 
 ### 方式 B：标准 Vite 开发与 Capacitor 原生 App 打包（Android / iOS）
 
 ```bash
 cd controller
-npm install
+npm ci
 
 # 启动 Vite 热重载开发服务器
 npm run dev

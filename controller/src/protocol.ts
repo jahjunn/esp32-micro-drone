@@ -107,6 +107,7 @@ export function protocolCrc8(data: Uint8Array, len: number = data.length): numbe
  * @param expo     指数柔和系数 (默认 0.35，让中心微调极其细腻，满杆仍保持 100% 输出)
  */
 export function applyDeadzoneAndExpo(raw: number, deadzone = 0.04, expo = 0.35): number {
+  if (!Number.isFinite(raw)) return 0.0;
   const clamped = Math.max(-1.0, Math.min(1.0, raw));
   const absVal = Math.abs(clamped);
   if (absVal <= deadzone) {
@@ -132,17 +133,19 @@ export function encodeControlFrame(input: ControlInputState, seq: number): Uint8
   buf[2] = seq & 0xff;
 
   let flags = 0;
-  if (input.armed && !input.kill) flags |= PROTOCOL_FLAG_ARMED;
-  if (input.kill) flags |= PROTOCOL_FLAG_KILL;
+  const invalid = ![input.throttle, input.roll, input.pitch, input.yaw].every(Number.isFinite);
+  const stop = input.kill || invalid;
+  if (input.armed && !stop) flags |= PROTOCOL_FLAG_ARMED;
+  if (stop) flags |= PROTOCOL_FLAG_KILL;
   if (input.halfRate) flags |= PROTOCOL_FLAG_HALF_RATE;
   buf[3] = flags;
 
-  const thrClamped = input.kill || !input.armed ? 0.0 : Math.max(0.0, Math.min(1.0, input.throttle));
+  const thrClamped = stop || !input.armed ? 0.0 : Math.max(0.0, Math.min(1.0, input.throttle));
   const thrInt = Math.round(thrClamped * 1000);
 
-  const rollInt  = Math.round(Math.max(-1.0, Math.min(1.0, input.roll)) * 1000);
-  const pitchInt = Math.round(Math.max(-1.0, Math.min(1.0, input.pitch)) * 1000);
-  const yawInt   = Math.round(Math.max(-1.0, Math.min(1.0, input.yaw)) * 1000);
+  const rollInt  = stop ? 0 : Math.round(Math.max(-1.0, Math.min(1.0, input.roll)) * 1000);
+  const pitchInt = stop ? 0 : Math.round(Math.max(-1.0, Math.min(1.0, input.pitch)) * 1000);
+  const yawInt   = stop ? 0 : Math.round(Math.max(-1.0, Math.min(1.0, input.yaw)) * 1000);
 
   // 小端序写入 (Little-Endian = true)
   view.setUint16(4, thrInt, true);

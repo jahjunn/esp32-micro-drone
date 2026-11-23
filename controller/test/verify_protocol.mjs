@@ -102,4 +102,12 @@ assert.equal(parsed.loopUs, 1120);
 telemBuf[6] ^= 0x01;
 assert.equal(decodeTelemetryFrame(telemBuf), null, 'Corrupted telemetry frame must return null');
 console.log('[PASS] 4. 19-byte Telemetry Frame decode & CRC-8 integrity check verified');
+for (const axis of ['throttle', 'roll', 'pitch', 'yaw']) {
+  const bad = encodeControlFrame({ throttle: 0.5, roll: 0, pitch: 0, yaw: 0,
+    armed: true, kill: false, halfRate: false, [axis]: Number.NaN }, 10);
+  assert.equal(bad[3] & 3, 2, `${axis} NaN must produce KILL without ARMED`);
+  assert.deepEqual(Array.from(bad.slice(4, 12)), Array(8).fill(0));
+}
+assert.equal(applyDeadzoneAndExpo(Number.NaN), 0, 'Invalid stick input must center');
+console.log('[PASS] 5. Invalid control input produces zeroed KILL frame');
 console.log('=================================================================================================');

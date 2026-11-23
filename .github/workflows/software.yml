@@ -1,0 +1,40 @@
+name: Software checks
+
+on: [push, pull_request, workflow_dispatch]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: controller/package-lock.json
+      - name: C unit tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p firmware/test/output
+          for source in firmware/test/test_*.c; do
+            binary="firmware/test/output/$(basename "$source" .c)"
+            gcc -O2 -std=c11 -Wall -Wextra -Werror=return-type "$source" -lm -o "$binary"
+            "$binary"
+          done
+      - name: Ground station tests and build
+        working-directory: controller
+        run: |
+          npm ci
+          npm test
+          npm run build
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: ESP32-S3 firmware build
+        run: |
+          python -m pip install platformio==6.2.0
+          python -m platformio run -d firmware

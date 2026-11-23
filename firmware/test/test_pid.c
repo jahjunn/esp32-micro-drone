@@ -15,7 +15,7 @@ static int g_failures = 0;
 
 int main(void) {
     PID_t pid;
-    //合理的阻尼系数，避免高频抽搐
+    // 合理的阻尼系数，避免高频抽搐
     pid_init(&pid, 2.0f, 0.5f, 0.02f, 10.0f, 20.0f);
 
     float current_angle = 10.0f;  // 初始被风吹偏 10 度
@@ -53,6 +53,15 @@ int main(void) {
     // 此时只有 P=2.0*5.0=10.0, I=0.5*(5.0*0.01)=0.025, D 必须为 0（因为 measured 没变！）
     float step_out = pid_update_measurement(&pid, 5.0f, 0.0f, dt);
     CHECK(fabsf(step_out - 10.025f) < 1e-4f, "setpoint step produces zero derivative kick");
+
+    // 断言 4（F-05）：内环稳态偏心纠偏积分权限检查（ki=0.08, int_limit=1.2, 稳态误差 -0.2 rad/s 持续 3s）
+    PID_t trim_pid;
+    pid_init(&trim_pid, 0.25f, 0.08f, 0.004f, 1.20f, 0.40f);
+    for (int step = 0; step < 1200; step++) {
+        (void)pid_update_measurement(&trim_pid, 0.0f, 0.2f, 0.0025f);
+    }
+    CHECK(fabsf(trim_pid.integral * trim_pid.ki) >= 0.04f,
+          "rate PID integral authority >= 0.04 for steady CG offset trim (F-05)");
 
     printf("==================================================\n");
     if (g_failures == 0) {

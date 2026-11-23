@@ -187,6 +187,7 @@ function updateStickReadouts(): void {
 
 // ==================== 紧急安全撤防 / 急停统一入口 ====================
 function triggerEmergencyKill(msg = '已触发紧急急停 (KILL)！油门已归零并强制上锁。'): void {
+  cancelArmHold();
   if (settingsDialog.open) {
     settingsDialog.close();
   }
@@ -201,6 +202,7 @@ function triggerEmergencyKill(msg = '已触发紧急急停 (KILL)！油门已归
 }
 
 function handleSafetyEvent(reason: SafetyEventReason): void {
+  cancelArmHold();
   const wasArmed = isArmed;
   const outcome = evaluateLifecycleSafety(reason, wasArmed);
 
@@ -466,6 +468,9 @@ window.addEventListener('pagehide', () => {
 
 // 笔记本键盘急停兜底：Esc 随时急停（弹窗未解锁时先关弹窗）；已解锁状态下空格键优先触发急停
 window.addEventListener('keydown', (e: KeyboardEvent) => {
+  if (e.code !== 'Escape' && e.code !== 'Space') return;
+  e.preventDefault(); // 防止焦点落在解锁按钮时，空格产生原生 click 误解锁。
+  if (e.repeat) return;
   if (e.code === 'Escape') {
     if (settingsDialog.open && !isArmed) {
       settingsDialog.close();

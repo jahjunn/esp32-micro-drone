@@ -56,6 +56,13 @@ int main(void) {
     CHECK(fabsf(RAD2DEG(euler.roll)) < 0.2f, "Test 1: stationary roll drift suppressed < 0.2 deg");
     CHECK(fabsf(RAD2DEG(ahrs.ix) - (-3.0f)) < 0.2f, "Test 1: integral learned -3.0 deg/s gyro bias");
 
+    // 场景 1b（F-02 零偏极性护栏）：失加计分支 mahony_update_gyro_only 必须延续 +ix 补偿符号
+    for (int step = 1; step <= 400; step++) {
+        mahony_update_gyro_only(&ahrs, bias_gyro, dt);
+    }
+    mahony_to_euler(&ahrs, &euler);
+    CHECK(fabsf(RAD2DEG(euler.roll)) < 0.3f, "Test 1b: mahony_update_gyro_only keeps learned +ix bias sign");
+
     // 场景 2：倾斜收敛测试（机身向右歪 30 度静置）
     mahony_init(&ahrs, 2.0f, 0.005f);
     printf("\n====== Test 2: Tilt Convergence (Static Roll = +30.0 deg) ======\n");

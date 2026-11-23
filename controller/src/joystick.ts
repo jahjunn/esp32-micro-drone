@@ -207,20 +207,17 @@ export class VirtualStick {
 export class GamepadPoller {
   private rafId: number | null = null;
   private lastTimestampMs: number | null = null;
-  private hadConnectedPad = false;
+  private activePadIndex: number | null = null;
   private onUpdate: (gp: Gamepad, dtSec: number) => void;
   private onDisconnect?: () => void;
 
   private readonly handleConnected = () => {
-    this.hadConnectedPad = true;
     this.start();
   };
 
-  private readonly handleDisconnected = () => {
-    const pads = navigator.getGamepads ? navigator.getGamepads() : [];
-    const hasRemaining = Array.from(pads).some((p) => Boolean(p && p.connected));
-    if (!hasRemaining) {
-      this.hadConnectedPad = false;
+  private readonly handleDisconnected = (event: GamepadEvent) => {
+    if (event.gamepad.index === this.activePadIndex) {
+      this.activePadIndex = null;
       this.lastTimestampMs = null;
       if (this.onDisconnect) {
         this.onDisconnect();
@@ -253,13 +250,22 @@ export class GamepadPoller {
       let activePad: Gamepad | null = null;
       for (const pad of pads) {
         if (pad && pad.connected) {
-          activePad = pad;
-          break;
+          if (!activePad) activePad = pad;
+          if (pad.index === this.activePadIndex) {
+            activePad = pad;
+            break;
+          }
         }
       }
 
+      if (this.activePadIndex !== null && activePad?.index !== this.activePadIndex) {
+        this.activePadIndex = null;
+        this.lastTimestampMs = null;
+        this.onDisconnect?.();
+      }
+
       if (activePad) {
-        this.hadConnectedPad = true;
+        this.activePadIndex = activePad.index;
         const dtSec =
           this.lastTimestampMs !== null
             ? Math.max(0.0, Math.min(0.05, (ts - this.lastTimestampMs) * 0.001))
@@ -268,12 +274,6 @@ export class GamepadPoller {
         this.onUpdate(activePad, dtSec);
       } else {
         this.lastTimestampMs = null;
-        if (this.hadConnectedPad) {
-          this.hadConnectedPad = false;
-          if (this.onDisconnect) {
-            this.onDisconnect();
-          }
-        }
       }
 
       this.rafId = requestAnimationFrame(loop);

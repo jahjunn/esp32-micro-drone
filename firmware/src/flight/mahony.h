@@ -60,6 +60,36 @@ static inline void mahony_init(Mahony_t *m, float kp, float ki) {
     mahony_reset(m);
 }
 
+// 内部复用核心：使用已补偿零偏（与可选 P 修正）的角速度 [rad/s] 完成四元数积分与单位归一化
+static inline void mahony_quat_integrate(Mahony_t *m, float gx, float gy, float gz, float dt) {
+    float half_dt = 0.5f * dt;
+    float q0 = m->q0;
+    float q1 = m->q1;
+    float q2 = m->q2;
+    float q3 = m->q3;
+
+    m->q0 += (-q1 * gx - q2 * gy - q3 * gz) * half_dt;
+    m->q1 += ( q0 * gx + q2 * gz - q3 * gy) * half_dt;
+    m->q2 += ( q0 * gy - q1 * gz + q3 * gx) * half_dt;
+    m->q3 += ( q0 * gz + q1 * gy - q2 * gx) * half_dt;
+
+    // 四元数重新归一化（防止浮点运算误差积累导致长度偏离 1）
+    float norm_q = sqrtf(m->q0 * m->q0 + m->q1 * m->q1 + m->q2 * m->q2 + m->q3 * m->q3);
+    if (norm_q > 1e-6f) {
+        float inv_q = 1.0f / norm_q;
+        m->q0 *= inv_q;
+        m->q1 *= inv_q;
+        m->q2 *= inv_q;
+        m->q3 *= inv_q;
+    }
+}
+
+// 3b. 纯陀螺仪积分入口（当加速度计帧无效/NaN 丢包时调用，避免伪造假水平向量拉偏姿态；
+//     注：m->ix/iy/iz 存储的是“负零偏修正量”（见 line 98/110），故必须做加法 +m->i* ）
+static inline void mahony_update_gyro_only(Mahony_t *m, Vector3_t gyro, float dt) {
+    mahony_quat_integrate(m, gyro.x + m->ix, gyro.y + m->iy, gyro.z + m->iz, dt);
+}
+
 // 4. Mahony 六轴姿态更新核心函数（每次控制循环 400Hz 调用一次）
 // 输入：
 //   gyro  —— 滤波后的三轴角速度（必须为弧度/秒 [rad/s]，FRD 坐标系）
@@ -111,27 +141,8 @@ static inline void mahony_update_imu(Mahony_t *m, Vector3_t gyro, Vector3_t acce
     gy += m->iy;
     gz += m->iz;
 
-    // 【步骤 5：用修正后的角速度积分更新四元数（一阶微分方程：dq/dt = 0.5 * q ⊗ ω）】
-    float half_dt = 0.5f * dt;
-    float q0 = m->q0;
-    float q1 = m->q1;
-    float q2 = m->q2;
-    float q3 = m->q3;
-
-    m->q0 += (-q1 * gx - q2 * gy - q3 * gz) * half_dt;
-    m->q1 += ( q0 * gx + q2 * gz - q3 * gy) * half_dt;
-    m->q2 += ( q0 * gy - q1 * gz + q3 * gx) * half_dt;
-    m->q3 += ( q0 * gz + q1 * gy - q2 * gx) * half_dt;
-
-    // 【步骤 6：四元数重新归一化（防止浮点运算误差积累导致长度偏离 1）】
-    float norm_q = sqrtf(m->q0 * m->q0 + m->q1 * m->q1 + m->q2 * m->q2 + m->q3 * m->q3);
-    if (norm_q > 1e-6f) {
-        float inv_q = 1.0f / norm_q;
-        m->q0 *= inv_q;
-        m->q1 *= inv_q;
-        m->q2 *= inv_q;
-        m->q3 *= inv_q;
-    }
+    // 【步骤 5~6：四元数积分更新并单位归一化】
+    mahony_quat_integrate(m, gx, gy, gz, dt);
 }
 
 // 5. 将四元数翻译为人类和 PID 看得懂的欧拉角（输出为弧度制 [rad]，对齐 types.h FRD 约定）

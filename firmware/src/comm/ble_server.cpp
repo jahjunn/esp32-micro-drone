@@ -16,10 +16,11 @@ static uint32_t         s_last_rx_ms     = 0U;
 static bool             s_has_valid_rx   = false;
 static bool             s_ble_connected  = false;
 
-static uint32_t         s_rx_ok_count    = 0U;
-static uint32_t         s_rx_err_count   = 0U;
-static uint8_t          s_last_rx_seq    = 0U;
-static uint8_t          s_telem_seq      = 0U;
+static uint32_t         s_rx_ok_count      = 0U;
+static uint32_t         s_rx_err_count     = 0U;
+static uint8_t          s_last_rx_seq      = 0U;
+static uint8_t          s_telem_seq        = 0U;
+static bool             s_need_readvertise = false; // [F-03] 延迟重广播标志（由 vCommTask 消费）
 
 static BLEServer         *s_pServer      = nullptr;
 static BLECharacteristic *s_pTelemChar   = nullptr;
@@ -30,7 +31,8 @@ static BLECharacteristic *s_pTelemChar   = nullptr;
 class UavServerCallbacks : public BLEServerCallbacks {
     void onConnect(BLEServer *pServer, esp_ble_gatts_cb_param_t *param) override {
         portENTER_CRITICAL(&s_cmd_mux);
-        s_ble_connected = true;
+        s_ble_connected    = true;
+        s_need_readvertise = false;
         portEXIT_CRITICAL(&s_cmd_mux);
 
         // 主动向主机（手机/PC）请求低延迟 BLE 连接参数：
@@ -42,15 +44,16 @@ class UavServerCallbacks : public BLEServerCallbacks {
     }
 
     void onDisconnect(BLEServer *pServer) override {
+        (void)pServer;
         portENTER_CRITICAL(&s_cmd_mux);
         s_ble_connected       = false;
         // 物理断链瞬间强制让指令失效，触发飞控安全模块保护
         s_latest_cmd.throttle = 0.0f;
+        s_latest_cmd.armed    = false;
         s_has_valid_rx        = false;
+        // [F-03] 仅置位标志，严禁直接在 Bluedroid GATT 回调上下文里重启广播
+        s_need_readvertise    = true;
         portEXIT_CRITICAL(&s_cmd_mux);
-
-        // 立即重新开启广播，允许飞手随时重连
-        BLEDevice::startAdvertising();
     }
 };
 
@@ -66,9 +69,10 @@ class UavCtrlCharCallbacks : public BLECharacteristicCallbacks {
         uint8_t          seq = 0U;
 
         ProtocolStatus_t st = protocol_parse_control(raw_data, raw_len, &parsed_cmd, &seq);
-        uint32_t now_ms = millis();
 
+        // [F-04] 必须在锁内取时，否则跨核读写极窄窗口下可能造成 last_ms > now_ms 下溢为 4.29e9 假失联
         portENTER_CRITICAL(&s_cmd_mux);
+        uint32_t now_ms = millis();
         if (st == PROTOCOL_OK) {
             s_latest_cmd   = parsed_cmd;
             s_last_rx_ms   = now_ms;
@@ -125,9 +129,9 @@ void ble_comm_init(const char *device_name) {
 }
 
 void ble_comm_get_command(ControlCommand_t *out_cmd, uint32_t *out_cmd_age_ms) {
-    uint32_t now_ms = millis();
-
+    // [F-04] 必须在锁内取时，否则会下溢为 4.29e9 假失联
     portENTER_CRITICAL(&s_cmd_mux);
+    uint32_t now_ms  = millis();
     bool     valid   = s_has_valid_rx && s_ble_connected;
     uint32_t last_ms = s_last_rx_ms;
     if (out_cmd != nullptr) {
@@ -140,7 +144,8 @@ void ble_comm_get_command(ControlCommand_t *out_cmd, uint32_t *out_cmd_age_ms) {
             // 未连接或从未收到有效包时，返回一个远超 500ms 的超时值（10000ms）
             *out_cmd_age_ms = 10000U;
         } else {
-            *out_cmd_age_ms = (uint32_t)(now_ms - last_ms);
+            uint32_t diff = (uint32_t)(now_ms - last_ms);
+            *out_cmd_age_ms = (diff >= 0x80000000U) ? 0U : diff;
         }
     }
 }
@@ -150,7 +155,10 @@ bool ble_comm_send_telemetry(FlightState_t state,
                              EulerAngle_t att_rad,
                              MotorOutput_t motors,
                              uint16_t loop_us) {
-    if (!s_ble_connected || s_pTelemChar == nullptr) {
+    portENTER_CRITICAL(&s_cmd_mux);
+    bool connected = s_ble_connected;
+    portEXIT_CRITICAL(&s_cmd_mux);
+    if (!connected || s_pTelemChar == nullptr) {
         return false;
     }
 
@@ -170,6 +178,20 @@ void ble_comm_get_stats(BleCommStats_t *out_stats) {
     out_stats->last_seq     = s_last_rx_seq;
     out_stats->connected    = s_ble_connected;
     portEXIT_CRITICAL(&s_cmd_mux);
+}
+
+void ble_comm_poll(void) {
+    bool need_adv = false;
+    portENTER_CRITICAL(&s_cmd_mux);
+    if (s_need_readvertise && !s_ble_connected) {
+        need_adv           = true;
+        s_need_readvertise = false;
+    }
+    portEXIT_CRITICAL(&s_cmd_mux);
+
+    if (need_adv) {
+        BLEDevice::startAdvertising();
+    }
 }
 
 #endif // defined(ARDUINO)

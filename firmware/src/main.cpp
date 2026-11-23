@@ -21,6 +21,7 @@
 
 #include "config.h"
 #include "flight/controller.h"
+#include "flight/heartbeat.h"
 #include "comm/protocol.h"
 #include "comm/ble_server.h"
 #include "drivers/mpu6050.h"
@@ -50,9 +51,13 @@ static SharedTelem_t     s_telem_snap      = {
 };
 
 static FlightController_t s_fc;
-static bool               s_imu_boot_ok    = false;
-static TaskHandle_t       s_ctrl_task      = nullptr;
-static esp_timer_handle_t s_ctrl_timer     = nullptr;
+static bool               s_imu_boot_ok       = false;
+static TaskHandle_t       s_ctrl_task         = nullptr;
+static esp_timer_handle_t s_ctrl_timer        = nullptr;
+// 心跳、故障锁存与四路 PWM 更新共用此锁，防止两核交错写入恢复推力。
+static portMUX_TYPE       s_motor_mux = portMUX_INITIALIZER_UNLOCKED;
+static uint32_t           s_ctrl_heartbeat_ms = 0U;
+static bool               s_ctrl_fault = false;
 
 // ==================== 400Hz 硬件周期定时器回调（消除 FreeRTOS 1ms tick 截断误差） ====================
 static void ctrl_timer_cb(void *arg) {
@@ -67,11 +72,10 @@ static void vControlTask(void *pvParameters) {
     (void)pvParameters;
 
     int64_t  prev_step_us   = esp_timer_get_time();
-    uint32_t consec_imu_err = 0U;
 
     for (;;) {
         // 阻塞等待精确 2500 us 周期信号，空闲 CPU 期间释放给 Core1 IDLE（保障 Watchdog 喂狗）
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10));
+        uint32_t notifications = ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(10));
 
         int64_t now_us = esp_timer_get_time();
         float   dt_sec = (float)(now_us - prev_step_us) * 1e-6f;
@@ -96,6 +100,10 @@ static void vControlTask(void *pvParameters) {
             s_telem_snap.calibrating = false;
             s_telem_snap.imu_ok      = false;
             portEXIT_CRITICAL(&s_telem_mux);
+            // 即使启动阶段 IMU 失联仍保持控制环心跳更新，避免与 Core1 心跳超时故障混为一谈
+            portENTER_CRITICAL(&s_motor_mux);
+            s_ctrl_heartbeat_ms = (uint32_t)millis();
+            portEXIT_CRITICAL(&s_motor_mux);
             continue;
         }
 
@@ -106,18 +114,10 @@ static void vControlTask(void *pvParameters) {
         Vector3_t accel_frd = { NAN,  NAN,  NAN  };
 
         if (mpu6050_read(&gyro_flu, &accel_flu, Wire, MPU6050_I2C_ADDR)) {
-            consec_imu_err = 0U;
             controller_map_flu_to_frd(gyro_flu, accel_flu, &gyro_frd, &accel_frd);
         } else {
             // 单拍短暂 I2C 干扰传入 NAN，交由 controller.h NaN 防火墙保护滤波器不中毒；
-            // 若连续 >= 40 拍 (100ms) 硬件掉线，立即强制撤销解锁权限防盲飞失控！
-            if (consec_imu_err < 1000U) {
-                consec_imu_err++;
-            }
-            if (consec_imu_err >= 40U) {
-                cmd.armed    = false;
-                cmd.throttle = 0.0f;
-            }
+            // 连续无效帧由 controller 统一计数并锁存 FAILSAFE，保留飞手真实 armed 输入。
         }
 
         // 5. 执行 400Hz 串级飞控步进（含 C-03 实测 dt 安全钳位）
@@ -127,13 +127,27 @@ static void vControlTask(void *pvParameters) {
         );
 
         // 6. 底层硬件总闸门写入 20kHz PWM
-        bool imu_runtime_ok = (consec_imu_err < 40U);
+        bool imu_runtime_ok = (s_fc.invalid_imu_samples < CTRL_IMU_FAILURE_SAMPLES);
+        portENTER_CRITICAL(&s_motor_mux);
+        uint32_t output_ms = (uint32_t)millis();
+        bool healthy_disarm = !cmd.armed && cmd_age_ms <= SAFETY_TIMEOUT_MS &&
+                              notifications > 0U && imu_runtime_ok &&
+                              dt_sec <= 1.5f * CTRL_DT;
+        s_ctrl_fault = heartbeat_fault_latched(s_ctrl_fault || notifications == 0U,
+                                               s_ctrl_heartbeat_ms, output_ms,
+                                               CTRL_HEARTBEAT_TIMEOUT_MS, healthy_disarm);
+        if (s_ctrl_fault) {
+            s_fc.safety.state = state = FLIGHT_STATE_FAILSAFE;
+            controller_reset_pids(&s_fc);
+        }
         if (!imu_runtime_ok || state == FLIGHT_STATE_LOCKED || state == FLIGHT_STATE_FAILSAFE) {
             motor_out_stop_all();
             motors = { 0.0f, 0.0f, 0.0f, 0.0f };
         } else {
             motor_out_write(motors);
         }
+        s_ctrl_heartbeat_ms = output_ms;
+        portEXIT_CRITICAL(&s_motor_mux);
 
         uint16_t exec_us = (uint16_t)(esp_timer_get_time() - now_us);
 
@@ -148,6 +162,7 @@ static void vControlTask(void *pvParameters) {
         s_telem_snap.imu_ok      = imu_runtime_ok;
         s_telem_snap.gyro_bias   = s_fc.gyro_bias;
         portEXIT_CRITICAL(&s_telem_mux);
+
     }
 }
 
@@ -160,31 +175,51 @@ static void vCommTask(void *pvParameters) {
     uint32_t   diag_div      = 0U;
 
     for (;;) {
+        portENTER_CRITICAL(&s_motor_mux);
+        s_ctrl_fault = heartbeat_fault_latched(s_ctrl_fault, s_ctrl_heartbeat_ms,
+                                               (uint32_t)millis(), CTRL_HEARTBEAT_TIMEOUT_MS, false);
+        bool ctrl_alive = !s_ctrl_fault;
+        if (!ctrl_alive) {
+            motor_out_stop_all(); // 控制拍停摆 -> 强制硬件断桨，防止 LEDC 锁死最后占空比定速飞走
+        }
+        portEXIT_CRITICAL(&s_motor_mux);
+
+        // [F-03] 2. 安全处理 BLE 断连后的延迟重广播（运行在 Core0 任务上下文，远离 GATT 回调）
+        ble_comm_poll();
+
         SharedTelem_t snap;
         portENTER_CRITICAL(&s_telem_mux);
         snap = s_telem_snap;
         portEXIT_CRITICAL(&s_telem_mux);
 
+        if (!ctrl_alive) {
+            snap.state  = FLIGHT_STATE_FAILSAFE;
+            snap.motors = { 0.0f, 0.0f, 0.0f, 0.0f };
+            snap.imu_ok = false;
+        }
+
         BleCommStats_t ble_stats;
         ble_comm_get_stats(&ble_stats);
 
-        // 1. 刷新板载 WS2812 五态安全/校准灯语 (E-03 可观测性)
+        // 3. 刷新板载 WS2812 五态安全/校准灯语 (E-03 可观测性)
         status_led_update(snap.state, snap.calibrating, ble_stats.connected, snap.imu_ok);
 
-        // 2. 通过 BLE Notify 下发 19 字节遥测帧
+        // 4. 通过 BLE Notify 下发 19 字节遥测帧
         ble_comm_send_telemetry(snap.state, snap.vbat_v, snap.attitude, snap.motors, snap.loop_us);
 
-        // 3. 首次完成开机陀螺仪静止校准时串口提示
+        // 5. 首次完成开机陀螺仪静止校准时串口提示
         if (!logged_cal && snap.imu_ok && !snap.calibrating) {
             logged_cal = true;
             Serial.printf("[CAL] Gyro calibration OK! Bias FRD (rad/s): X=%.4f Y=%.4f Z=%.4f\n",
                           snap.gyro_bias.x, snap.gyro_bias.y, snap.gyro_bias.z);
         }
 
-        // 4. 每 2 秒 (40 拍 @ 20Hz) 串口打印一次健康状态，方便 USB 台架联调
+        // 6. 每 2 秒 (40 拍 @ 20Hz) 串口打印一次健康状态，方便 USB 台架联调
         if (++diag_div >= 40U) {
             diag_div = 0U;
-            if (!snap.imu_ok) {
+            if (!ctrl_alive) {
+                Serial.println("[ERR] Core1 control task heartbeat timeout (>200ms)! Motors stopped.");
+            } else if (!snap.imu_ok) {
                 Serial.println("[ERR] MPU6050 disconnected/fault on I2C (GPIO8 SDA / GPIO9 SCL)!");
             } else {
                 Serial.printf("[STAT] st=%u cal=%d vbat=%.2fV rpy=(%.1f, %.1f, %.1f) loop=%uus ble=%d rx=%lu/%lu\n",
@@ -236,8 +271,9 @@ void setup() {
     ble_comm_init(UAV_BLE_DEVICE_NAME);
     Serial.printf("[INIT] BLE GATT advertising as \"%s\"\n", UAV_BLE_DEVICE_NAME);
 
-    // 6. 创建 Core1 实时控制任务 + Core0 遥测状态灯任务
-    xTaskCreatePinnedToCore(
+    // 6. 创建 Core1 实时控制任务 + Core0 遥测状态灯任务（先初始化心跳基线避免上电瞬间误报超时）
+    s_ctrl_heartbeat_ms = (uint32_t)millis();
+    ESP_ERROR_CHECK(xTaskCreatePinnedToCore(
         vControlTask,
         "vControlTask",
         4096,
@@ -245,9 +281,9 @@ void setup() {
         5,
         &s_ctrl_task,
         UAV_CORE_CTRL
-    );
+    ) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 
-    xTaskCreatePinnedToCore(
+    ESP_ERROR_CHECK(xTaskCreatePinnedToCore(
         vCommTask,
         "vCommTask",
         4096,
@@ -255,7 +291,7 @@ void setup() {
         2,
         nullptr,
         UAV_CORE_COMM
-    );
+    ) == pdPASS ? ESP_OK : ESP_ERR_NO_MEM);
 
     // 7. 启动 400Hz (2500 us) 高精度周期硬件定时器触发 Core1
     esp_timer_create_args_t timer_args = {};

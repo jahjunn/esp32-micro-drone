@@ -26,6 +26,7 @@ import {
   mixerQuadX,
 } from '../src/flight_logic.ts';
 import { UavBleController } from '../src/ble_adapter.ts';
+import { GamepadPoller } from '../src/joystick.ts';
 
 console.log('============================= Ground Station Control & Safety Test =============================');
 
@@ -225,7 +226,27 @@ res = sim.step(buildControlInput(
   { armed: false, kill: false, halfRate: false, rollTrimDeg: 0, pitchTrimDeg: 0 }
 ), true);
 assert.equal(res.state, FlightState.LOCKED, 'Disarm resets LOWBAT_LAND latch cleanly');
-console.log('[PASS] 5. QuadSimulator 1:1 parity with mixer.h, E-02 tiered tilt, and §6 sticky LOWBAT_LAND verified');
+
+// F-06：5.1% 油门门槛 + 10% 低油门渐入段差动权限（与 controller.h 保持 1:1 一致）
+sim.reset();
+sim.step(buildControlInput(
+  { throttle: 0.0, yawRight: 0, rollRight: 0, pitchForward: 0 },
+  { armed: true, kill: false, halfRate: false, rollTrimDeg: 0, pitchTrimDeg: 0 }
+));
+res = sim.step(buildControlInput(
+  { throttle: 0.051, yawRight: 0, rollRight: 1.0, pitchForward: 0 },
+  { armed: true, kill: false, halfRate: false, rollTrimDeg: 0, pitchTrimDeg: 0 }
+), true);
+const edgeSpread = Math.max(...res.motors) - Math.min(...res.motors);
+assert.ok(edgeSpread < 0.06, `F-06 parity: 5.1% throttle edge spread (${edgeSpread.toFixed(4)}) < 0.06`);
+
+res = sim.step(buildControlInput(
+  { throttle: 0.10, yawRight: 0, rollRight: 0.12, pitchForward: 0 },
+  { armed: true, kill: false, halfRate: false, rollTrimDeg: 0, pitchTrimDeg: 0 }
+), true);
+const rampSpread = Math.max(...res.motors) - Math.min(...res.motors);
+assert.ok(rampSpread < 0.05, `F-06 ramp parity: 10% throttle unsat spread (${rampSpread.toFixed(4)}) < 0.05`);
+console.log('[PASS] 5. QuadSimulator 1:1 parity with mixer.h, E-02 tiered tilt, §6 sticky LOWBAT_LAND, and F-06 auth ramp verified');
 
 // 6. 验证 UavBleController 在无 DOM 环境下可安全运行仿真闭环并即时停机断开
 let lastTelem = null;
@@ -265,4 +286,80 @@ assert.ok(Math.abs(Math.hypot(stick.x, stick.y) - 1.0) < 1e-9, 'Right stick vect
 assert.deepEqual(applyStickDelta(0.3, -0.4, Number.NaN, 0, 100, true), { x: 0.3, y: -0.4 });
 assert.deepEqual(applyStickDelta(0.3, -0.4, 10, 10, 0, true), { x: 0.3, y: -0.4 });
 console.log('[PASS] 7. Mobile relative-drag stick: no jump on touch-down, per-axis/circular clamp, NaN-safe');
+// 8. 手机局域网 HTTP 页面应明确报告安全上下文缺失，不误报设备不支持。
+const secureDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'isSecureContext');
+let insecureError = '';
+try {
+  Object.defineProperty(globalThis, 'isSecureContext', { value: false, configurable: true });
+  const insecureBle = new UavBleController(
+    () => ({ throttle: 0, roll: 0, pitch: 0, yaw: 0, armed: false, kill: false, halfRate: false }),
+    { onModeChange: () => {}, onTelemetry: () => {}, onTxFrame: () => {},
+      onError: (message) => { insecureError = message; } }
+  );
+  await insecureBle.connectBle();
+  assert.match(insecureError, /HTTPS/);
+  assert.equal(insecureBle.getMode(), 'disconnected');
+} finally {
+  if (secureDescriptor) Object.defineProperty(globalThis, 'isSecureContext', secureDescriptor);
+  else delete globalThis.isSecureContext;
+}
+console.log('[PASS] 8. Insecure HTTP connection reports HTTPS requirement');
+
+// 9. 多手柄掉线不能静默接管；取消的 BLE 连接不能覆盖正在运行的仿真。
+const originalGlobals = new Map(['window', 'navigator', 'requestAnimationFrame', 'cancelAnimationFrame']
+  .map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)]));
+const handlers = new Map();
+let nextFrame;
+let pads = [{ index: 0, connected: true }, { index: 1, connected: true }];
+let poller;
+let raceBle;
+try {
+  const fakeWindow = {
+    addEventListener: (name, callback) => handlers.set(name, callback),
+    removeEventListener: (name) => handlers.delete(name),
+  };
+  Object.defineProperty(globalThis, 'window', { value: fakeWindow, configurable: true });
+  Object.defineProperty(globalThis, 'navigator', { value: { getGamepads: () => pads }, configurable: true });
+  Object.defineProperty(globalThis, 'requestAnimationFrame', {
+    value: (callback) => { nextFrame = callback; return 1; }, configurable: true,
+  });
+  Object.defineProperty(globalThis, 'cancelAnimationFrame', { value: () => {}, configurable: true });
+  let drops = 0;
+  let activeIndex = null;
+  poller = new GamepadPoller((pad) => { activeIndex = pad.index; }, () => { drops++; });
+  nextFrame(0);
+  assert.equal(activeIndex, 0);
+  pads = [null, pads[1]];
+  nextFrame(16);
+  assert.equal(drops, 1, 'Active gamepad loss triggers disarm even if another gamepad remains');
+  assert.equal(activeIndex, 1);
+  handlers.get('gamepaddisconnected')({ gamepad: pads[1] });
+  assert.equal(drops, 2, 'Active gamepad disconnect event triggers disarm');
+
+  let finishSelection;
+  let gattConnects = 0;
+  Object.defineProperty(globalThis, 'navigator', {
+    value: { bluetooth: { requestDevice: () => new Promise((resolve) => { finishSelection = resolve; }) } },
+    configurable: true,
+  });
+  raceBle = new UavBleController(
+    () => ({ throttle: 0, roll: 0, pitch: 0, yaw: 0, armed: false, kill: false, halfRate: false }),
+    { onModeChange: () => {}, onTelemetry: () => {}, onTxFrame: () => {},
+      onError: (message) => { throw new Error(message); } }
+  );
+  const pendingConnect = raceBle.connectBle();
+  raceBle.startSimulator();
+  finishSelection({ gatt: { connect: () => { gattConnects++; } } });
+  await pendingConnect;
+  assert.equal(raceBle.getMode(), 'simulator', 'Cancelled BLE request cannot replace simulator');
+  assert.equal(gattConnects, 0, 'Cancelled device selection must not open a GATT connection');
+} finally {
+  poller?.destroy();
+  raceBle?.disconnect();
+  for (const [key, descriptor] of originalGlobals) {
+    if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+    else delete globalThis[key];
+  }
+}
+console.log('[PASS] 9. Multiple-gamepad loss and cancelled BLE selection regression verified');
 console.log('===============================================================================================');

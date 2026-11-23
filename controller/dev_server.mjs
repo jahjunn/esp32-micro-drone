@@ -34,7 +34,9 @@ const server = http.createServer((req, res) => {
     }
   }
 
-  if (!filePath.startsWith(ROOT_DIR) || !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+  const relativePath = path.relative(ROOT_DIR, filePath);
+  if (relativePath === '..' || relativePath.startsWith(`..${path.sep}`) || path.isAbsolute(relativePath) ||
+      !fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
     res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
     res.end('404 Not Found');
     return;
@@ -75,7 +77,8 @@ server.on('error', (err) => {
 
 server.listen(PORT, '0.0.0.0', () => {
   console.log(`\n[UAV Controller] 地面站与手柄前端已启动`);
-  console.log(`  本机访问：  http://localhost:${PORT}`);
+  const listeningPort = server.address().port;
+  console.log(`  本机访问：  http://localhost:${listeningPort}`);
 
   // 列出局域网地址，并过滤掉 VPN / 代理软件(Clash 等)的虚拟网卡（198.18.x.x）与链路本地地址
   const lanUrls = [];
@@ -83,7 +86,7 @@ server.listen(PORT, '0.0.0.0', () => {
   for (const [name, addrs] of Object.entries(os.networkInterfaces())) {
     for (const a of addrs || []) {
       if (a.family !== 'IPv4' || a.internal) continue;
-      const url = `http://${a.address}:${PORT}   (${name})`;
+      const url = `http://${a.address}:${listeningPort}   (${name})`;
       if (a.address.startsWith('198.18.') || a.address.startsWith('198.19.') || a.address.startsWith('169.254.')) {
         virtualUrls.push(url);
       } else {

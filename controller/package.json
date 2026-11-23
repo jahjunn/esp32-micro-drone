@@ -10,7 +10,7 @@
     "preview": "vite preview --host",
     "test:protocol": "node test/verify_protocol.mjs",
     "test:controller": "node test/verify_controller.mjs",
-    "test": "node test/verify_protocol.mjs && node test/verify_controller.mjs",
+    "test": "node test/verify_protocol.mjs && node test/verify_controller.mjs && node test/verify_server.mjs",
     "cap:sync": "cap sync",
     "cap:android": "cap open android",
     "cap:ios": "cap open ios"
