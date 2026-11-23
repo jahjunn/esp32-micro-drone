@@ -377,7 +377,7 @@ D:\Nodejs\node.exe controller/test/verify_controller.mjs
 
 ### 第三方报告逐项复核
 
-来源：`REVIEW-2026-11-23.md`，原报告保留，结论以以下独立复核为准。
+来源：[`reviews/REVIEW-2026-11-23.md`](reviews/REVIEW-2026-11-23.md)，原报告保留，结论以以下独立复核为准。
 
 | 条目 | 复核与处理 |
 |---|---|

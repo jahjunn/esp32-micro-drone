@@ -57,10 +57,10 @@
 轻量无人机/
 ├── docs/                  # 文档与台账
 │   ├── ARCHITECTURE.md    # 架构与算法
-│   ├── DESIGN_FLOW.md     # 设计路径
 │   ├── WORKPLAN.md        # 工作计划（工作项/验收/依赖）
 │   ├── BOM.md             # 物料清单
-│   └── ERRATA.md          # 代码审查纠错与验收台账
+│   ├── ERRATA.md          # 代码审查纠错与验收台账
+│   └── reviews/           # 按日期归档的完整评审报告
 ├── hardware/              # 板框 DXF 与生成脚本（v1–v8）
 ├── firmware/              # 机载固件（ESP32-S3 双核飞控、外设驱动、BLE 通信与 8 套 C 桌面单测）
 │   ├── platformio.ini     # N16R8 编译与分区配置（锁定 espressif32@6.9.0）
