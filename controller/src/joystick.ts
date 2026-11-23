@@ -1,15 +1,13 @@
 /**
  * joystick.ts —— 双虚拟摇杆（Pointer Events 多指独立追踪）+ Web Gamepad 实体手柄驱动
  *
- * 【美国手 Mode 2 人机标准定义】：
- * - 左摇杆 (Left Stick)：
- *   - 纵向 Y：油门 Throttle (0.0 ~ 1.0)，**松手不回中**（保持当前推力高度，底部启动为 0.0）
- *   - 横向 X：偏航角速度 Yaw (-1.0 ~ +1.0)，松手自动回中 0.0（右推顺时针右转）
- * - 右摇杆 (Right Stick)：
+ * 【触屏操控】：
+ * - 左摇杆纵向控制油门 (0.0 ~ 1.0)，松手保持当前油门，底部启动为 0.0。
+ * - 右摇杆：
  *   - 纵向 Y：前后俯仰操作 (-1.0 ~ +1.0)，松手自动回中 0.0（上推前飞 = +1.0，在指令合成层映射为 FRD 负俯仰低头角；下拉后退 = -1.0）
  *   - 横向 X：横滚角 Roll  (-1.0 ~ +1.0)，松手自动回中 0.0（右推右倾 = +1.0，左推左倾 = -1.0）
  *
- * 【手机触屏手感】：整个半屏面板都是触控区（拇指落哪都行），采用“相对位移”——落指点即原点，
+ * 【手机触屏手感】：采用“相对位移”——落指点即原点，
  * 手指落下时油门/姿态指令绝不跳变，只有拖动才改变（见 flight_logic.ts applyStickDelta）。
  */
 
@@ -27,7 +25,6 @@ export class VirtualStick {
   private zoneEl: HTMLElement;
   private touchEl: HTMLElement;
   private knobEl: HTMLElement;
-  private springX: boolean;
   private springY: boolean;
 
   private activePointerId: number | null = null;
@@ -37,7 +34,6 @@ export class VirtualStick {
   // 落指时的起点（相对位移基准）
   private startPx = 0;
   private startPy = 0;
-  private startNormX = 0.0;
   private startNormY = 0.0;
 
   private onChange: () => void;
@@ -45,16 +41,15 @@ export class VirtualStick {
   constructor(
     zoneEl: HTMLElement,
     knobEl: HTMLElement,
-    options: { springX: boolean; springY: boolean; initialY?: number; touchEl?: HTMLElement },
+    options: { springY: boolean; touchEl: HTMLElement },
     onChange: () => void
   ) {
     this.zoneEl = zoneEl;
-    this.touchEl = options.touchEl ?? zoneEl;
+    this.touchEl = options.touchEl;
     this.knobEl = knobEl;
-    this.springX = options.springX;
     this.springY = options.springY;
     // 默认安全基准：回中轴从 0.0 起步；非回中油门轴从底部 +1.0 (0% 油门) 起步，杜绝误传 100% 满油门
-    this.normY = options.initialY ?? (this.springY ? 0.0 : 1.0);
+    this.normY = this.springY ? 0.0 : 1.0;
     this.onChange = onChange;
 
     this.bindEvents();
@@ -98,12 +93,6 @@ export class VirtualStick {
     return this.activePointerId !== null;
   }
 
-  public setXNormalized(x: number): void {
-    const safeX = Number.isFinite(x) ? x : 0.0;
-    this.normX = Math.max(-1.0, Math.min(1.0, safeX));
-    this.renderKnob();
-  }
-
   public setNormalized(x: number, yUp: number): void {
     const safeX = Number.isFinite(x) ? x : 0.0;
     const safeY = Number.isFinite(yUp) ? yUp : 0.0;
@@ -114,7 +103,7 @@ export class VirtualStick {
 
   public releaseSpringAxes(): void {
     this.activePointerId = null;
-    if (this.springX) this.normX = 0.0;
+    this.normX = 0.0;
     if (this.springY) this.normY = 0.0;
     this.zoneEl.classList.remove('active');
     this.renderKnob();
@@ -145,7 +134,6 @@ export class VirtualStick {
       // 落指即定原点：此刻不改变任何指令值
       this.startPx = e.clientX;
       this.startPy = e.clientY;
-      this.startNormX = this.springX ? 0.0 : this.normX;
       this.startNormY = this.springY ? 0.0 : this.normY;
     });
 
@@ -177,12 +165,12 @@ export class VirtualStick {
     }
 
     const next = applyStickDelta(
-      this.startNormX,
+      0.0,
       this.startNormY,
-      e.clientX - this.startPx,
+      this.springY ? e.clientX - this.startPx : 0.0,
       e.clientY - this.startPy,
       maxRadius,
-      this.springY // 右摇杆圆形矢量限幅；左摇杆（油门/偏航）逐轴限幅，打偏航不会拉低油门
+      this.springY // 右杆圆形限幅，左杆只读纵向位移
     );
     this.normX = next.x;
     this.normY = next.y;

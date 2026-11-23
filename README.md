@@ -71,7 +71,7 @@
 │   │   ├── flight/        # 飞控算法（types / biquad_lpf / mahony / pid / mixer / safety / controller）
 │   │   └── comm/          # BLE GATT 服务端与二进制协议（protocol.h / ble_server.*）
 │   └── test/              # 桌面侧单元测试（8 套带强断言 CHECK() 的 C 测试）
-└── controller/            # 移动端触屏地面站（Mode-2 相对位移双摇杆 + Gamepad + Web Bluetooth + 离线仿真）
+└── controller/            # 移动端触屏地面站（油门与方向分区 + Gamepad + Web Bluetooth + 离线仿真）
 ```
 
 ## 快速开始

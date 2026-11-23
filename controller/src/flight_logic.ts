@@ -109,7 +109,7 @@ export function formatPitchTrimLabel(deg: number): string {
  * 手机触屏“相对位移式”摇杆数学（落指处即原点，杜绝手指一落下摇杆/油门就跳变）：
  *   - 起点归一化值 (startNorm) + 手指相对落点的位移 / 满行程像素 = 当前归一化值；
  *   - 回中轴 startNorm = 0；油门轴 startNorm = 落指时的当前油门位置，因此触摸不会改变油门，只有拖动才会；
- *   - circular = true 时做圆形矢量限幅（右摇杆俯仰+横滚），否则逐轴限幅（左摇杆油门+偏航）。
+ *   - circular = true 时做圆形矢量限幅（右摇杆俯仰+横滚），否则逐轴限幅（触屏油门只输入 Y）。
  * 坐标沿用屏幕系：Y 向下为正。
  */
 export function applyStickDelta(

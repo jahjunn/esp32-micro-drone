@@ -28,6 +28,9 @@ import { VirtualStick, GamepadPoller } from './joystick.ts';
 // ==================== 控制状态变量 ====================
 let isArmed = false;
 let isKillLatch = false;
+let gamepadYaw = 0;
+let heldYaw: { pointerId: number; button: HTMLButtonElement; direction: number } | null = null;
+const TOUCH_YAW_INPUT = 0.5;
 
 // 实体手柄左摇杆油门模式（默认增量稳态，适配 Xbox/PS 弹簧回中手柄；航模 USB 控可切直映）
 let gamepadThrMode: GamepadThrottleMode = 'incremental';
@@ -137,33 +140,52 @@ async function toggleImmersive(): Promise<void> {
   }
 }
 
-// ==================== 初始化左右双虚拟摇杆 (Mode 2) ====================
-// 整块半屏面板作为触控区（拇指落哪都行），相对位移式：手指落下不会让油门/姿态跳变
+// ==================== 触屏油门、姿态与偏航 ====================
 const leftStick = new VirtualStick(
   document.getElementById('stick-left-zone')!,
   document.getElementById('stick-left-knob')!,
-  {
-    springX: true,
-    springY: false,
-    initialY: 1.0, // initialY = 1.0 对应底部 0% 油门
-    touchEl: document.getElementById('stick-left-panel')!,
-  },
+  { springY: false, touchEl: document.getElementById('stick-left-panel')! },
   updateStickReadouts
 );
 
 const rightStick = new VirtualStick(
   document.getElementById('stick-right-zone')!,
   document.getElementById('stick-right-knob')!,
-  { springX: true, springY: true, initialY: 0.0, touchEl: document.getElementById('stick-right-panel')! },
+  { springY: true, touchEl: document.getElementById('stick-right-touch')! },
   updateStickReadouts
 );
 
-// ==================== 组合当前控制输入（含死区、Expo 与 Mode-2->FRD 映射） ====================
+function releaseTouchYaw(): void {
+  heldYaw?.button.classList.remove('active');
+  heldYaw = null;
+}
+
+for (const [id, direction] of [['yaw-left', -1], ['yaw-right', 1]] as const) {
+  const button = document.getElementById(id) as HTMLButtonElement;
+  button.addEventListener('pointerdown', (event) => {
+    if (heldYaw || event.button !== 0 || isKillLatch) return;
+    event.preventDefault();
+    button.setPointerCapture(event.pointerId);
+    gamepadYaw = 0;
+    heldYaw = { pointerId: event.pointerId, button, direction };
+    button.classList.add('active');
+    updateStickReadouts();
+  });
+  for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'] as const) {
+    button.addEventListener(type, (event) => {
+      if (heldYaw?.button !== button || heldYaw.pointerId !== event.pointerId) return;
+      releaseTouchYaw();
+      updateStickReadouts();
+    });
+  }
+}
+
+// ==================== 组合当前控制输入（含死区、Expo 与 FRD 映射） ====================
 function getCurrentControlInput(): ControlInputState {
   return buildControlInput(
     {
       throttle: leftStick.getY(),
-      yawRight: leftStick.getX(),
+      yawRight: heldYaw ? heldYaw.direction * TOUCH_YAW_INPUT : gamepadYaw,
       rollRight: rightStick.getX(),
       pitchForward: rightStick.getY(),
     },
@@ -331,6 +353,9 @@ function setArmedState(targetArmed: boolean): void {
     btnArmToggle.classList.add('armed');
   } else {
     isArmed = false;
+    releaseTouchYaw();
+    gamepadYaw = 0;
+    updateStickReadouts();
     btnArmToggle.textContent = '长按 解锁';
     btnArmToggle.classList.remove('armed');
   }
@@ -383,6 +408,8 @@ btnKill.addEventListener('click', () => {
 
 // 状态 / 工具弹窗：关闭按钮、点遮罩背景、Esc 都可顺畅退出，彻底杜绝卡死
 btnSettings.addEventListener('click', () => {
+  releaseTouchYaw();
+  updateStickReadouts();
   if (typeof settingsDialog.showModal === 'function') {
     settingsDialog.showModal();
   } else {
@@ -503,10 +530,9 @@ new GamepadPoller(
       rightStick.setNormalized(rx, ryForward);
     }
 
-    // 左摇杆：Yaw 显式写入 0.0；油门按选定模式安全更新
+    // 实体手柄保留 Mode 2。触屏操控优先，实体偏航回中时显式写入 0.0。
+    gamepadYaw = heldYaw || leftStick.isDragging() || rightStick.isDragging() || isKillLatch ? 0 : lx;
     if (!leftStick.isDragging()) {
-      leftStick.setXNormalized(lx);
-
       if (gamepadThrMode === 'incremental') {
         const nextThr = computeIncrementalThrottle(leftStick.getY(), rawLeftYUp, dtSec, 0.08);
         leftStick.setThrottle(nextThr);

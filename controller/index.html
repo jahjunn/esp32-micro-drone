@@ -32,18 +32,18 @@
 
     <!-- ==================== 主区：左摇杆 | 地平仪 + 解锁 | 右摇杆 ==================== -->
     <main class="cockpit-main">
-      <!-- 左摇杆（Mode 2）：纵向油门不回中，横向偏航回中 -->
-      <section class="stick-panel" id="stick-left-panel">
-        <div class="stick-zone stick-zone-throttle" id="stick-left-zone">
-          <div class="crosshair-h"></div>
-          <div class="crosshair-v"></div>
-          <div class="hover-line" title="悬停参考油门线 (~50%)"></div>
-          <div class="stick-knob" id="stick-left-knob"></div>
+      <section class="stick-panel" id="stick-left-panel" aria-label="油门">
+        <div class="stick-readout stick-heading">
+          <span>油门</span>
+          <strong id="val-thr">0%</strong>
         </div>
-        <div class="stick-readout">
-          <span>油门 <strong id="val-thr">0%</strong></span>
-          <span>偏航 <strong id="val-yaw">0°/s</strong></span>
+        <div class="stick-surface">
+          <div class="stick-zone stick-zone-throttle" id="stick-left-zone">
+            <div class="throttle-track"></div>
+            <div class="stick-knob" id="stick-left-knob"></div>
+          </div>
         </div>
+        <p class="stick-hint">上推加油 · 下拉减油 · 松手保持</p>
       </section>
 
       <!-- 中央：地平仪 + 解锁 + 更多 -->
@@ -67,16 +67,27 @@
         <button id="btn-settings" class="btn-more" type="button">状态 / 设置</button>
       </section>
 
-      <!-- 右摇杆（Mode 2）：俯仰 + 横滚，松手回中 -->
-      <section class="stick-panel" id="stick-right-panel">
-        <div class="stick-zone" id="stick-right-zone">
-          <div class="crosshair-h"></div>
-          <div class="crosshair-v"></div>
-          <div class="stick-knob" id="stick-right-knob"></div>
+      <section class="stick-panel" aria-label="方向">
+        <div class="stick-heading">方向</div>
+        <div class="stick-surface" id="stick-right-touch">
+          <div class="stick-zone" id="stick-right-zone">
+            <div class="crosshair-h"></div>
+            <div class="crosshair-v"></div>
+            <span class="stick-direction stick-forward">前</span>
+            <span class="stick-direction stick-back">后</span>
+            <span class="stick-direction stick-left">左</span>
+            <span class="stick-direction stick-right">右</span>
+            <div class="stick-knob" id="stick-right-knob"></div>
+          </div>
         </div>
         <div class="stick-readout">
           <span>俯仰 <strong id="val-pitch">0.0°</strong></span>
           <span>横滚 <strong id="val-roll">0.0°</strong></span>
+        </div>
+        <div class="yaw-controls" role="group" aria-label="按住转动机头">
+          <button id="yaw-left" class="btn-yaw" type="button" aria-label="按住向左转动机头">↶ 左转</button>
+          <span>按住转向 <strong id="val-yaw">0°/s</strong></span>
+          <button id="yaw-right" class="btn-yaw" type="button" aria-label="按住向右转动机头">右转 ↷</button>
         </div>
       </section>
     </main>
@@ -130,7 +141,7 @@
     <div id="alert-banner" class="alert-banner" style="display: none;"></div>
 
     <!-- 竖屏提示：遥控必须横屏双拇指操作 -->
-    <div class="rotate-hint">请将手机横屏使用<br /><small>双拇指分别操作左右摇杆</small></div>
+    <div class="rotate-hint">请将手机横屏使用<br /><small>左手控制油门，右手控制方向</small></div>
   </div>
 
   <script type="module" src="/src/main.ts"></script>
