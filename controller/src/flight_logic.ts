@@ -29,10 +29,19 @@ export const SAFETY_TILT_RECOVER_OK_RAD = (45.0 * Math.PI) / 180.0;
 export const SAFETY_EXTREME_TILT_RAD = (110.0 * Math.PI) / 180.0;
 export const SAFETY_TILT_RECOVER_MAX_THROTTLE = 0.45;
 export const SAFETY_LAND_MAX_THROTTLE = 0.25;
+export const SAFETY_TIMEOUT_MS = 500;
 
 // 仿真引擎运行在 50Hz (20ms/拍)，对应固件 400Hz 下的 0.8 秒宽限期 (320 * 2.5ms = 800ms -> 40 拍 * 20ms)
 export const SIM_LOOP_HZ = 50;
 export const SIM_TILT_GRACE_TICKS = 40;
+
+function tiltCosine(rollDeg: number, pitchDeg: number): number {
+  return Math.cos(rollDeg * Math.PI / 180) * Math.cos(pitchDeg * Math.PI / 180);
+}
+
+export function isArmTiltAllowed(rollDeg: number, pitchDeg: number): boolean {
+  return tiltCosine(rollDeg, pitchDeg) >= Math.cos(SAFETY_MAX_TILT_RAD);
+}
 
 export function clamp(value: number, min: number, max: number): number {
   if (!Number.isFinite(value)) return min;
@@ -355,8 +364,9 @@ export class QuadSimulator {
     this.highTiltTicks = 0;
   }
 
-  public step(input: ControlInputState, holdTiltForTest = false): SimStepResult {
+  public step(input: ControlInputState, holdTiltForTest = false, commandAgeMs = 0): SimStepResult {
     const maxTiltDeg = input.halfRate ? CTRL_TILT_HALF_DEG : CTRL_TILT_STANDARD_DEG;
+    const commLost = commandAgeMs > SAFETY_TIMEOUT_MS;
 
     const cmdValid =
       Number.isFinite(input.throttle) &&
@@ -370,7 +380,7 @@ export class QuadSimulator {
     let effYaw = cmdValid ? clamp(input.yaw, -1.0, 1.0) : 0.0;
 
     // 1. 复刻 safety_update() 分级安全状态机
-    if (!input.armed || input.kill) {
+    if ((!input.armed || input.kill) && (!commLost || this.state === FlightState.LOCKED)) {
       this.state = FlightState.LOCKED;
       this.highTiltTicks = 0;
       effThrottle = 0.0;
@@ -385,9 +395,7 @@ export class QuadSimulator {
       effYaw = 0.0;
     } else {
       const attValid = Number.isFinite(this.rollDeg) && Number.isFinite(this.pitchDeg);
-      const rollRad = (this.rollDeg * Math.PI) / 180.0;
-      const pitchRad = (this.pitchDeg * Math.PI) / 180.0;
-      const cosTilt = attValid ? Math.cos(rollRad) * Math.cos(pitchRad) : -1.0;
+      const cosTilt = tiltCosine(this.rollDeg, this.pitchDeg);
 
       const tiltEnter = !attValid || cosTilt < Math.cos(SAFETY_MAX_TILT_RAD);
       const tiltClear = attValid && cosTilt >= Math.cos(SAFETY_TILT_RECOVER_OK_RAD);
@@ -396,6 +404,7 @@ export class QuadSimulator {
       if (this.state === FlightState.LOCKED) {
         if (
           cmdValid &&
+          !commLost &&
           !tiltEnter &&
           Number.isFinite(this.vbatV) &&
           this.vbatV >= SAFETY_VBAT_WARN_V &&
@@ -417,7 +426,7 @@ export class QuadSimulator {
         this.state === FlightState.LOWBAT_WARN ||
         this.state === FlightState.LOWBAT_LAND
       ) {
-        if (!cmdValid || tiltExtreme) {
+        if (!cmdValid || commLost || tiltExtreme) {
           this.state = FlightState.FAILSAFE;
           this.highTiltTicks = 0;
           effThrottle = 0.0;

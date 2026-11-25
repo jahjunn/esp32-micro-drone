@@ -60,6 +60,20 @@ static inline void mahony_init(Mahony_t *m, float kp, float ki) {
     mahony_reset(m);
 }
 
+// Initialize roll/pitch from a trusted FRD gravity sample. Yaw is unobservable.
+// Direct alignment also handles the inverted case, where cross-product feedback is zero.
+static inline void mahony_align_gravity(Mahony_t *m, Vector3_t gravity) {
+    float half_roll = 0.5f * atan2f(gravity.y, gravity.z);
+    float half_pitch = 0.5f * atan2f(-gravity.x, hypotf(gravity.y, gravity.z));
+    float cr = cosf(half_roll), sr = sinf(half_roll);
+    float cp = cosf(half_pitch), sp = sinf(half_pitch);
+    mahony_reset(m);
+    m->q0 = cr * cp;
+    m->q1 = sr * cp;
+    m->q2 = cr * sp;
+    m->q3 = -sr * sp;
+}
+
 // 内部复用核心：使用已补偿零偏（与可选 P 修正）的角速度 [rad/s] 完成四元数积分与单位归一化
 static inline void mahony_quat_integrate(Mahony_t *m, float gx, float gy, float gz, float dt) {
     float half_dt = 0.5f * dt;

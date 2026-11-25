@@ -21,6 +21,7 @@ import {
   computeDirectThrottle,
   computeIncrementalThrottle,
   evaluateLifecycleSafety,
+  isArmTiltAllowed,
 } from './flight_logic.ts';
 import { UavBleController, type ConnectionMode } from './ble_adapter.ts';
 import { VirtualStick, GamepadPoller } from './joystick.ts';
@@ -28,6 +29,11 @@ import { VirtualStick, GamepadPoller } from './joystick.ts';
 // ==================== 控制状态变量 ====================
 let isArmed = false;
 let isKillLatch = false;
+let armRequestTimer: ReturnType<typeof setTimeout> | null = null;
+let latestTelemetry: TelemetryState | null = null;
+let lastTelemetryMs = 0;
+const ARM_CONFIRM_TIMEOUT_MS = 1500;
+const TELEMETRY_FRESH_MS = 500;
 let gamepadYaw = 0;
 let heldYaw: { pointerId: number; button: HTMLButtonElement; direction: number } | null = null;
 const TOUCH_YAW_INPUT = 0.5;
@@ -41,6 +47,8 @@ let prevTelemState: FlightState = FlightState.LOCKED;
 // DOM 引用
 const connDot = document.getElementById('conn-dot')!;
 const connLabel = document.getElementById('conn-label')!;
+const connectionDetail = document.getElementById('connection-detail')!;
+const throttleFill = document.getElementById('throttle-fill')!;
 const flightStatePill = document.getElementById('flight-state-pill')!;
 const vbatBox = document.getElementById('vbat-box')!;
 const vbatVal = document.getElementById('vbat-val')!;
@@ -53,6 +61,7 @@ const btnKill = document.getElementById('btn-kill')!;
 const btnZeroThr = document.getElementById('btn-zero-thr')!;
 const btnThrMode = document.getElementById('btn-thr-mode')!;
 const btnArmToggle = document.getElementById('btn-arm-toggle')!;
+const armHint = document.getElementById('arm-hint')!;
 const btnSettings = document.getElementById('btn-settings')!;
 const btnSettingsClose = document.getElementById('btn-settings-close')!;
 const settingsDialog = document.getElementById('settings-dialog') as HTMLDialogElement;
@@ -71,6 +80,7 @@ const m1Bar = document.getElementById('m1-bar')!;
 const m2Bar = document.getElementById('m2-bar')!;
 const m3Bar = document.getElementById('m3-bar')!;
 const m4Bar = document.getElementById('m4-bar')!;
+const motorValues = [1, 2, 3, 4].map((index) => document.getElementById(`m${index}-value`)!);
 
 const hexFrameView = document.getElementById('hex-frame-view')!;
 const gamepadRow = document.getElementById('gamepad-row')!;
@@ -181,13 +191,15 @@ for (const [id, direction] of [['yaw-left', -1], ['yaw-right', 1]] as const) {
 }
 
 // ==================== 组合当前控制输入（含死区、Expo 与 FRD 映射） ====================
-function getCurrentControlInput(): ControlInputState {
+function getCurrentControlInput(forDisplay = false): ControlInputState {
+  const inhibitFlightInput = !forDisplay && isArmed &&
+    (armRequestTimer !== null || latestTelemetry?.state === FlightState.FAILSAFE);
   return buildControlInput(
     {
-      throttle: leftStick.getY(),
-      yawRight: heldYaw ? heldYaw.direction * TOUCH_YAW_INPUT : gamepadYaw,
-      rollRight: rightStick.getX(),
-      pitchForward: rightStick.getY(),
+      throttle: inhibitFlightInput ? 0 : leftStick.getY(),
+      yawRight: inhibitFlightInput ? 0 : (heldYaw ? heldYaw.direction * TOUCH_YAW_INPUT : gamepadYaw),
+      rollRight: inhibitFlightInput ? 0 : rightStick.getX(),
+      pitchForward: inhibitFlightInput ? 0 : rightStick.getY(),
     },
     {
       armed: isArmed,
@@ -200,11 +212,84 @@ function getCurrentControlInput(): ControlInputState {
 }
 
 function updateStickReadouts(): void {
-  const input = getCurrentControlInput();
+  const input = getCurrentControlInput(true);
   valThr.textContent = `${Math.round(input.throttle * 100)}%`;
+  throttleFill.style.height = `${input.throttle * 100}%`;
   valYaw.textContent = `${Math.round(input.yaw * 180)}°/s`;
   valPitch.textContent = `${(input.pitch * CTRL_TILT_STANDARD_DEG).toFixed(1)}°`;
   valRoll.textContent = `${(input.roll * CTRL_TILT_STANDARD_DEG).toFixed(1)}°`;
+  updateArmHint();
+}
+
+function telemetryIsFresh(): boolean {
+  return latestTelemetry !== null && performance.now() - lastTelemetryMs <= TELEMETRY_FRESH_MS;
+}
+
+function armBlockReason(): string | null {
+  const mode = bleController.getMode();
+  const telem = latestTelemetry;
+  if (mode === 'connecting') return '正在连接飞控';
+  if (mode === 'disconnected') return '连接飞控或开启仿真';
+  if (!telem || !telemetryIsFresh()) return '等待飞控遥测';
+  if (telem.state === FlightState.FAILSAFE) return '飞控故障锁存 · 等待上锁确认';
+  if (telem.state !== FlightState.LOCKED) return '等待飞控上锁确认';
+  if (leftStick.getY() > SAFETY_ARM_MAX_THROTTLE) return '先将油门降至 5% 以内';
+  if (telem.vbatV < SAFETY_VBAT_WARN_V) return '电池低于 3.50 V · 禁止解锁';
+  if (!isArmTiltAllowed(telem.rollDeg, telem.pitchDeg)) return '请放平机身 · 倾角过大';
+  return null;
+}
+
+function updateArmHint(): void {
+  const pending = armRequestTimer !== null;
+  const confirmed = isArmed && !pending && latestTelemetry?.state !== FlightState.FAILSAFE;
+  let hint: string;
+  let label = '长按 解锁';
+  let warning = false;
+  if (isArmed) {
+    label = pending ? '长按 取消解锁' : '长按 上锁';
+    if (pending) {
+      hint = '等待飞控确认 · 请保持机身静止';
+    } else if (!telemetryIsFresh()) {
+      hint = '飞控遥测超时';
+      warning = true;
+    } else if (latestTelemetry?.state === FlightState.FAILSAFE) {
+      label = '长按 上锁复位';
+      hint = '飞控故障锁存 · 电机已停机';
+      warning = true;
+    } else if (latestTelemetry?.state === FlightState.LOWBAT_LAND) {
+      hint = '低压保护已锁存 · 油门已受限';
+      warning = true;
+    } else {
+      hint = '飞控已确认解锁';
+    }
+  } else {
+    const block = armBlockReason();
+    warning = block !== null;
+    hint = block ?? (isKillLatch ? '急停已锁存 · 长按重新解锁' : '保持机身静止 · 长按解锁');
+  }
+  if (armHint.textContent !== hint) armHint.textContent = hint;
+  if (btnArmToggle.textContent !== label) btnArmToggle.textContent = label;
+  armHint.classList.toggle('warn', warning);
+  btnArmToggle.classList.toggle('armed', confirmed);
+  const pressed = String(confirmed);
+  if (btnArmToggle.getAttribute('aria-pressed') !== pressed) {
+    btnArmToggle.setAttribute('aria-pressed', pressed);
+  }
+}
+
+function clearArmRequest(): void {
+  if (armRequestTimer !== null) {
+    clearTimeout(armRequestTimer);
+    armRequestTimer = null;
+  }
+}
+
+function resetFlightInputs(): void {
+  directThrEngaged = false;
+  releaseTouchYaw();
+  gamepadYaw = 0;
+  rightStick.resetAllAxes();
+  leftStick.resetAllAxes();
 }
 
 // ==================== 紧急安全撤防 / 急停统一入口 ====================
@@ -216,9 +301,7 @@ function triggerEmergencyKill(msg = '已触发紧急急停 (KILL)！油门已归
   buzz([120, 60, 120]);
   isKillLatch = true;
   setArmedState(false);
-  directThrEngaged = false;
-  rightStick.resetAllAxes();
-  leftStick.resetAllAxes();
+  resetFlightInputs();
   void bleController.sendEmergencyKillBurst();
   showAlert(msg);
 }
@@ -238,9 +321,7 @@ function handleSafetyEvent(reason: SafetyEventReason): void {
     setArmedState(false);
   }
   if (outcome.zeroThrottle && outcome.releaseSpringAxes) {
-    directThrEngaged = false;
-    rightStick.resetAllAxes();
-    leftStick.resetAllAxes();
+    resetFlightInputs();
   }
   if (outcome.sendKillBurst) {
     void bleController.sendEmergencyKillBurst();
@@ -253,25 +334,56 @@ function handleSafetyEvent(reason: SafetyEventReason): void {
 // ==================== 初始化 BLE 与仿真控制器 ====================
 const bleController = new UavBleController(getCurrentControlInput, {
   onModeChange: (mode: ConnectionMode, deviceName: string) => {
-    connLabel.textContent = deviceName;
+    latestTelemetry = null;
+    prevTelemState = FlightState.LOCKED;
+    connectionDetail.textContent = deviceName;
+    connLabel.textContent = mode === 'simulator' ? '离线仿真' : deviceName;
+    connLabel.title = deviceName;
     connDot.className = 'status-dot';
+    btnBleConnect.toggleAttribute('disabled', mode === 'connecting');
+    btnSimToggle.toggleAttribute('disabled', mode === 'connecting');
+    btnSimToggle.classList.toggle('btn-sim-active', mode === 'simulator');
+    btnSimToggle.textContent = mode === 'simulator' ? '停止离线仿真' : '开启离线仿真';
+    btnSimToggle.setAttribute('aria-pressed', String(mode === 'simulator'));
     if (mode === 'ble-web' || mode === 'ble-native') {
       connDot.classList.add('online');
       btnBleConnect.textContent = '断开 BLE';
       simToolbar.style.display = 'none';
     } else if (mode === 'simulator') {
       connDot.classList.add('sim');
-      btnBleConnect.textContent = '连接 BLE 飞控';
+      btnBleConnect.textContent = '连接蓝牙';
       simToolbar.style.display = 'flex';
     } else {
-      btnBleConnect.textContent = '连接 BLE 飞控';
+      btnBleConnect.textContent = mode === 'connecting' ? '连接中…' : '连接蓝牙';
       simToolbar.style.display = 'none';
+      vbatVal.textContent = '— V';
+      vbatBox.className = 'metric-box';
+      flightStatePill.textContent = mode === 'connecting' ? '连接中' : '未连接';
+      flightStatePill.className = 'state-pill state-locked';
+      attRoll.textContent = attPitch.textContent = attYaw.textContent = '—';
+      horizonPlate.style.transform = '';
+      m1Bar.style.height = m2Bar.style.height = m3Bar.style.height = m4Bar.style.height = '0%';
+      motorValues.forEach((element) => { element.textContent = '—'; });
+      txHzVal.textContent = '0 Hz';
+      loopUsVal.textContent = '— us';
       // 断线立即执行安全上锁与油门归零
       handleSafetyEvent('ble-disconnect');
     }
+    updateArmHint();
   },
 
   onTelemetry: (telem: TelemetryState) => {
+    latestTelemetry = telem;
+    lastTelemetryMs = performance.now();
+    if (armRequestTimer !== null && telem.state !== FlightState.LOCKED) {
+      clearArmRequest();
+      resetFlightInputs();
+    } else if (isArmed && armRequestTimer === null && telem.state === FlightState.LOCKED && prevTelemState !== FlightState.LOCKED) {
+      // 飞控已上锁，停止发送解锁位，避免旧请求触发再次解锁。
+      setArmedState(false);
+      resetFlightInputs();
+      showAlert('飞控报告已上锁。重新解锁需再次长按。');
+    }
     // 0. 进入故障/迫降态时手机强振提醒（只在状态跳变时触发一次）
     if (telem.state !== prevTelemState) {
       if (telem.state === FlightState.FAILSAFE || telem.state === FlightState.LOWBAT_LAND) {
@@ -283,7 +395,8 @@ const bleController = new UavBleController(getCurrentControlInput, {
     }
 
     // 1. 更新安全状态徽章
-    flightStatePill.textContent = FLIGHT_STATE_LABELS[telem.state];
+    flightStatePill.textContent = FLIGHT_STATE_LABELS[telem.state].replace(/^.*\((.*)\)$/, '$1');
+    flightStatePill.title = FLIGHT_STATE_LABELS[telem.state];
     flightStatePill.className = 'state-pill';
     if (telem.state === FlightState.LOCKED) {
       flightStatePill.classList.add('state-locked');
@@ -293,9 +406,6 @@ const bleController = new UavBleController(getCurrentControlInput, {
       flightStatePill.classList.add('state-warn');
     } else {
       flightStatePill.classList.add('state-failsafe');
-      if (telem.state === FlightState.FAILSAFE && isArmed) {
-        btnArmToggle.textContent = '故障！长按上锁复位';
-      }
     }
 
     // 2. 更新 1S 电池电压与分级告警色
@@ -322,6 +432,10 @@ const bleController = new UavBleController(getCurrentControlInput, {
     m2Bar.style.height = `${telem.motorPct[1]}%`;
     m3Bar.style.height = `${telem.motorPct[2]}%`;
     m4Bar.style.height = `${telem.motorPct[3]}%`;
+    motorValues.forEach((element, index) => {
+      element.textContent = `${Math.round(telem.motorPct[index])}%`;
+    });
+    updateArmHint();
   },
 
   onTxFrame: (frame: Uint8Array, txRateHz: number) => {
@@ -337,28 +451,26 @@ const bleController = new UavBleController(getCurrentControlInput, {
 // ==================== 安全解锁联锁与急停按钮逻辑 ====================
 function setArmedState(targetArmed: boolean): void {
   if (targetArmed) {
-    const mode = bleController.getMode();
-    if (mode === 'disconnected' || mode === 'connecting') {
-      showAlert('当前未连接飞控或仿真器，请先连接 BLE 或开启离线仿真！');
-      return;
-    }
-    // 硬性安全红线 S-3：油门高于 5% 严禁解锁！
-    if (leftStick.getY() > SAFETY_ARM_MAX_THROTTLE) {
-      showAlert('安全联锁拦截：请先把左摇杆油门拉到最低 (< 5%) 再点击解锁！');
+    const block = armBlockReason();
+    if (block) {
+      showAlert(block);
       return;
     }
     isKillLatch = false;
     isArmed = true;
-    btnArmToggle.textContent = '长按 上锁';
-    btnArmToggle.classList.add('armed');
+    armRequestTimer = globalThis.setTimeout(() => {
+      setArmedState(false);
+      resetFlightInputs();
+      showAlert('解锁未获确认。请保持机身平放静止，待飞控就绪后重试。');
+    }, ARM_CONFIRM_TIMEOUT_MS);
   } else {
+    clearArmRequest();
     isArmed = false;
     releaseTouchYaw();
     gamepadYaw = 0;
     updateStickReadouts();
-    btnArmToggle.textContent = '长按 解锁';
-    btnArmToggle.classList.remove('armed');
   }
+  updateArmHint();
 }
 
 // 解锁/上锁必须长按 0.6s（带进度条）：手机上拇指擦碰不会误解锁，更不会在飞行中误上锁断电机；
@@ -405,16 +517,23 @@ document.addEventListener('contextmenu', (e: Event) => e.preventDefault());
 btnKill.addEventListener('click', () => {
   triggerEmergencyKill();
 });
+document.getElementById('btn-dialog-kill')!.addEventListener('click', () => {
+  triggerEmergencyKill();
+});
 
 // 状态 / 工具弹窗：关闭按钮、点遮罩背景、Esc 都可顺畅退出，彻底杜绝卡死
 btnSettings.addEventListener('click', () => {
   releaseTouchYaw();
+  gamepadYaw = 0;
+  rightStick.releaseSpringAxes();
+  leftStick.releaseSpringAxes();
   updateStickReadouts();
   if (typeof settingsDialog.showModal === 'function') {
     settingsDialog.showModal();
   } else {
     settingsDialog.setAttribute('open', '');
   }
+  settingsDialog.querySelector('.dialog-body')!.scrollTop = 0;
 });
 
 btnSettingsClose.addEventListener('click', () => {
@@ -466,6 +585,9 @@ btnBleConnect.addEventListener('click', () => {
 });
 
 btnSimToggle.addEventListener('click', () => {
+  if (isArmed) {
+    triggerEmergencyKill('切换仿真模式前已急停并上锁，油门已归零。');
+  }
   if (bleController.getMode() === 'simulator') {
     bleController.disconnect();
   } else {
@@ -479,6 +601,7 @@ document.getElementById('sim-vbat-34')!.addEventListener('click', () => bleContr
 document.getElementById('sim-vbat-32')!.addEventListener('click', () => bleController.setSimBatteryVoltage(3.20));
 document.getElementById('sim-gust-tilt')?.addEventListener('click', () => bleController.triggerSimGustTilt());
 document.getElementById('sim-crash-tilt')!.addEventListener('click', () => bleController.triggerSimTiltCrash());
+document.getElementById('sim-control-loss')!.addEventListener('click', () => bleController.interruptSimControl());
 
 // ==================== E-04 页面切后台 / 失焦 / 离开页面 自动上锁 + 油门归零 + 急停 ====================
 document.addEventListener('visibilitychange', () => {
@@ -570,3 +693,4 @@ new GamepadPoller(
 // 默认启动离线仿真闭环，方便打开页面即刻体验摇杆与安全状态机
 updateStickReadouts();
 bleController.startSimulator();
+globalThis.setInterval(updateArmHint, 250);

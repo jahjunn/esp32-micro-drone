@@ -12,6 +12,7 @@ import {
   CTRL_TILT_STANDARD_DEG,
   MOTOR_IDLE_DEFAULT,
   QuadSimulator,
+  SAFETY_TIMEOUT_MS,
   SAFETY_TILT_RECOVER_MAX_THROTTLE,
   SIM_TILT_GRACE_TICKS,
   adjustTrimDeg,
@@ -23,6 +24,7 @@ import {
   evaluateLifecycleSafety,
   formatPitchTrimLabel,
   formatRollTrimLabel,
+  isArmTiltAllowed,
   mixerQuadX,
 } from '../src/flight_logic.ts';
 import { UavBleController } from '../src/ble_adapter.ts';
@@ -247,6 +249,24 @@ res = sim.step(buildControlInput(
 const rampSpread = Math.max(...res.motors) - Math.min(...res.motors);
 assert.ok(rampSpread < 0.05, `F-06 ramp parity: 10% throttle unsat spread (${rampSpread.toFixed(4)}) < 0.05`);
 console.log('[PASS] 5. QuadSimulator 1:1 parity with mixer.h, E-02 tiered tilt, §6 sticky LOWBAT_LAND, and F-06 auth ramp verified');
+
+assert.ok(isArmTiltAllowed(60, 0), '60° is the arming tilt limit');
+assert.equal(isArmTiltAllowed(50, 50), false, 'Combined roll and pitch exceed the arming tilt limit');
+assert.equal(isArmTiltAllowed(180, 0), false, 'An inverted craft cannot arm');
+const linkSim = new QuadSimulator();
+const armAtIdle = { ...flyInput, throttle: 0 };
+const disarm = { ...armAtIdle, armed: false };
+const staleAge = SAFETY_TIMEOUT_MS + 1;
+assert.equal(linkSim.step(armAtIdle, false, staleAge).state, FlightState.LOCKED);
+assert.equal(linkSim.step(armAtIdle, false, SAFETY_TIMEOUT_MS).state, FlightState.ARMED);
+const linkFault = linkSim.step(disarm, false, staleAge);
+assert.equal(linkFault.state, FlightState.FAILSAFE, 'Stale disarm snapshot causes link-loss failsafe while armed');
+assert.deepEqual(linkFault.motors, [0, 0, 0, 0]);
+assert.equal(linkSim.step(disarm, false, staleAge).state, FlightState.FAILSAFE, 'Stale disarm cannot clear failsafe');
+assert.equal(linkSim.step(armAtIdle).state, FlightState.FAILSAFE, 'Reconnected arm alone cannot clear failsafe');
+assert.equal(linkSim.step(disarm).state, FlightState.LOCKED, 'Fresh disarm acknowledges failsafe');
+assert.equal(linkSim.step(armAtIdle).state, FlightState.ARMED);
+console.log('[PASS] Flight tilt gate and fresh disarm after command-link loss verified');
 
 // 6. 验证 UavBleController 在无 DOM 环境下可安全运行仿真闭环并即时停机断开
 let lastTelem = null;

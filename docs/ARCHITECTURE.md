@@ -124,6 +124,7 @@ CF-Drone 对照基线：`83ebe613`（2026-11-23 读取）。当前只做实现�
 │       ├── test_mixer.c
 │       ├── test_safety.c
 │       ├── test_controller.c
+│       ├── test_flight_scenarios.c
 │       ├── test_heartbeat.c
 │       └── test_protocol.c
 └── controller/                     # 跨平台低延迟蓝牙手柄与地面站（Web Bluetooth + Gamepad + Capacitor）
@@ -261,8 +262,8 @@ M4 = T + P + R - Y
 
 | 保护 | 触发 | 动作 |
 |------|------|------|
-| 解锁四重联锁 | `LOCKED` 态请求解锁 | 必须同时满足：未失联 (`≤500ms`) + 机身平放 (`≤60°`) + 电压 `≥3.5V` + 油门 `≤5%` |
-| 失联保护 | `>500ms` 无有效控制帧 | 切入 `FLIGHT_STATE_FAILSAFE`（Sticky 锁死），油门归零，重连后不自动复转，需拨回上锁复位 |
+| 解锁联锁 | `LOCKED` 态请求解锁 | 控制帧未超时、电压 ≥3.5V、油门 ≤5%、陀螺已校准、IMU 本拍有效且重力观测和估计倾角均 ≤60° |
+| 失联保护 | BLE 报告断开，或 >500ms 无有效控制帧 | 已解锁时锁存 `FLIGHT_STATE_FAILSAFE` 并停机；重连后收到有效上锁帧才可复位 |
 | 倾角分级保护 | 空间倾角由 `cos(roll)*cos(pitch)` 判定 | 飞行油门下 >60° 归零目标、限油门 45%，回到 ≤45° 退出救机；320 拍未恢复、>110° 或怠速时 >60°，锁存 FAILSAFE 停机 |
 | 一级低压告警 | 电池 `<3.5V`（带载） | 切入 `FLIGHT_STATE_LOWBAT_WARN`，地面站告警，保留操控权以便飞回 |
 | 二级严重低压 | 电池 `<3.3V` | 切入 `FLIGHT_STATE_LOWBAT_LAND`，锁存回平并限油门 `≤25%`；无高度反馈，不保证受控下降速度 |
@@ -285,7 +286,7 @@ M4 = T + P + R - Y
 ## 7. 调试、测试与调参
 
 - **桌面侧单元测试**：
-  - C 端：`firmware/test/` 包含 LPF / Mahony / PID / 混控 / 安全 / 控制总成 / 协议 / 心跳共 **8 套单元测试**，验证合成数据与故障场景；不替代设备验证。
+  - C 端：`firmware/test/` 包含 **9 套桌面测试**，含 18 组闭环场景，验证合成数据与故障路径。台架负责验证实机响应。
   - 前端：`controller/test/verify_protocol.mjs` 验证死区/Expo 数学、13B/19B 字节序与 CRC-8 对齐；`controller/` 内置离线飞控仿真器（`Simulator`），无硬件即可演练完整解锁/告警/急停闭环。
 - **调参顺序**：先内环（角速度）→ 再外环（角度）→ 最后 yaw；
   先 roll/pitch → 后 yaw；先小增益 → 逐步加大到临界振荡再回退 30–50%。

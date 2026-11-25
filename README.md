@@ -62,7 +62,7 @@
 │   ├── ERRATA.md          # 代码审查纠错与验收台账
 │   └── reviews/           # 按日期归档的完整评审报告
 ├── hardware/              # 板框 DXF 与生成脚本（v1–v8）
-├── firmware/              # 机载固件（ESP32-S3 双核飞控、外设驱动、BLE 通信与 8 套 C 桌面单测）
+├── firmware/              # 机载固件（ESP32-S3 双核飞控、外设驱动、BLE 通信与 C 桌面测试）
 │   ├── platformio.ini     # N16R8 编译与分区配置（锁定 espressif32@6.9.0）
 │   ├── src/
 │   │   ├── config.h       # 全板引脚、20kHz LEDC PWM、400kHz I²C 与采样周期配置
@@ -70,7 +70,7 @@
 │   │   ├── drivers/       # 硬件驱动（mpu6050 / qmc5883p / motor_out / vbat / status_led）
 │   │   ├── flight/        # 飞控算法（types / biquad_lpf / mahony / pid / mixer / safety / controller）
 │   │   └── comm/          # BLE GATT 服务端与二进制协议（protocol.h / ble_server.*）
-│   └── test/              # 桌面侧单元测试（8 套带强断言 CHECK() 的 C 测试）
+│   └── test/              # C 桌面单测和闭环场景测试
 └── controller/            # 移动端触屏地面站（油门与方向分区 + Gamepad + Web Bluetooth + 离线仿真）
 ```
 
@@ -104,7 +104,7 @@
 | P1 硬件 | 🟡 板框 v8 已有，**电机位待改配 φ8.6 8520 孔位** |
 | P2 软件环境 | ✅ `platformio.ini`（N16R8 `espressif32@6.9.0`）、`config.h` 与全仓工程骨架就绪 |
 | P3 驱动与通信 | ✅ `mpu6050`、`qmc5883p`、`motor_out`、`vbat`、`status_led`（WS2812 五态/校准灯语）、`ble_server`、`protocol.h` 全部落盘并通过 PlatformIO 固件编译 |
-| P4 算法+单测 | ✅ 串级 PID 总控 `controller.h`（80Hz/40Hz LPF + Mahony + 200 拍自动标定 + 分级救机 + 实测 `dt` 钳位）、8 套 C 桌面单测与固件构建全部全绿 |
+| P4 算法+单测 | ✅ 串级 PID 总控、C 桌面测试与固件构建通过，闭环仿真范围见 `docs/ERRATA.md` |
 | P5 双核编排 | ✅ `main.cpp`（Core1 400Hz `esp_timer` 硬件触发 + Core0 20Hz BLE/遥测/状态灯）已完成并成功生成 `firmware.bin` 固件镜像；待硬件上板烧录 |
 | P6 调试与地面站 | 🟡 地面站与安全状态/混控仿真已通过 Node 单测；实机联调与调参待完成 |
 | P7–P9 | ⬜ 未开始 |

@@ -1,12 +1,12 @@
 :root {
-  --bg-deep: #070b14;
-  --bg-card: #101827;
-  --bg-panel: #162033;
-  --border-dim: #263552;
+  --bg-deep: #0b0f14;
+  --bg-card: #171e27;
+  --bg-panel: #202935;
+  --border-dim: #303d4d;
   --text-main: #e2e8f0;
   --text-muted: #94a3b8;
-  --accent-cyan: #06b6d4;
-  --accent-blue: #3b82f6;
+  --accent-cyan: #91dcf1;
+  --accent-blue: #91dcf1;
   --accent-green: #10b981;
   --accent-amber: #f59e0b;
   --accent-red: #ef4444;
@@ -42,7 +42,8 @@ html, body {
   /* 刘海 / 圆角 / 手势条安全区 */
   padding: max(6px, env(safe-area-inset-top)) max(10px, env(safe-area-inset-right))
            max(6px, env(safe-area-inset-bottom)) max(10px, env(safe-area-inset-left));
-  gap: 6px;
+  gap: 12px;
+  background: radial-gradient(ellipse at 50% 0%, #25303c44, transparent 65%), #0b0f14;
 }
 
 /* ==================== 顶栏 ==================== */
@@ -50,13 +51,17 @@ html, body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--bg-card);
+  background: linear-gradient(180deg, #202832, #141b23);
+  box-shadow: inset 0 1px #ffffff0c, 0 4px 14px #0003;
   border: 1px solid var(--border-dim);
-  border-radius: 10px;
+  border-radius: 12px;
   padding: 6px 12px;
   gap: 10px;
   flex-shrink: 0;
 }
+
+.brand-name { font-weight: 750; letter-spacing: 0.05em; white-space: nowrap; font-size: 0.9rem; }
+.brand-name span { color: var(--text-muted); font-weight: 450; font-size: 0.75rem; }
 
 .brand-group {
   display: flex;
@@ -83,7 +88,7 @@ html, body {
 }
 
 .conn-sub {
-  font-size: 0.78rem;
+  font-size: 0.875rem;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -91,7 +96,7 @@ html, body {
 }
 
 .state-pill {
-  padding: 5px 12px;
+  padding: 6px 12px;
   border-radius: 6px;
   font-weight: 700;
   font-size: 0.82rem;
@@ -131,6 +136,7 @@ html, body {
   border-radius: 6px;
   padding: 4px 10px;
   min-width: 72px;
+  box-shadow: inset 0 2px 4px #0005;
   text-align: center;
 }
 .metric-box.warn {
@@ -155,43 +161,46 @@ html, body {
 }
 
 .btn {
-  border: none;
-  border-radius: 7px;
-  padding: 7px 12px;
-  font-size: 0.8rem;
+  border: 1px solid #455263;
+  border-radius: 8px;
+  padding: 8px 14px;
+  min-height: 44px;
+  font-size: 0.875rem;
   font-weight: 700;
   cursor: pointer;
   white-space: nowrap;
 }
 .btn:active { transform: scale(0.96); }
-.btn-primary { background: var(--accent-blue); color: #fff; }
+.btn-primary { background: linear-gradient(#b7eaf7, #80bed0); color: #0c2730; box-shadow: inset 0 1px #ffffff80, 0 2px 8px #0005; }
 .btn-secondary {
   background: var(--bg-panel);
   color: var(--accent-cyan);
-  border: 1px solid var(--accent-cyan);
+  border: 1px solid #3c4c5e;
 }
 .btn-kill {
-  background: var(--accent-red);
+  background: linear-gradient(#d55353, #a02e35);
+  border: 1px solid #ec848077;
   color: #fff;
   padding: 7px 20px;
   font-size: 0.9rem;
-  box-shadow: 0 0 12px rgba(239, 68, 68, 0.45);
+  box-shadow: inset 0 1px #ffffff24, 0 3px 8px #0006;
 }
 
 /* ==================== 主操控区 ==================== */
 .cockpit-main {
   flex: 1;
   display: grid;
-  grid-template-columns: 1fr minmax(180px, 0.7fr) 1fr;
+  grid-template-columns: 1fr minmax(150px, 0.62fr) 1fr;
   gap: 10px;
   min-height: 0;
 }
 
 .stick-panel {
-  background: var(--bg-card);
+  background: radial-gradient(ellipse at 50% 0%, #28323e66, transparent 70%), linear-gradient(135deg, #1b232d, #11171f);
   border: 1px solid var(--border-dim);
-  border-radius: 12px;
-  padding: 6px 8px;
+  box-shadow: inset 0 1px #ffffff0a, 0 8px 24px #0003;
+  border-radius: 18px;
+  padding: 14px 18px;
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -212,10 +221,11 @@ html, body {
 
 .stick-zone {
   position: relative;
-  width: min(100%, 100cqh, 300px);
+  width: min(100%, 100cqh, 380px);
   aspect-ratio: 1 / 1;
-  background: radial-gradient(circle, #172338 0%, #0b1220 75%);
-  border: 2px solid var(--border-dim);
+  background: repeating-radial-gradient(circle at center, transparent 0 23%, #73879b12 23.5% 24%, transparent 24.5% 26%), radial-gradient(circle at 50% 65%, #263440, #10161e 70%);
+  border: 6px solid #26313e;
+  box-shadow: inset 0 5px 16px #000b, 0 1px 0 #72869b66, 0 -1px 0 #000, 0 8px 18px #0005;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -230,6 +240,8 @@ html, body {
 }
 .stick-zone-throttle,
 .stick-zone-throttle.active {
+  border-radius: 0;
+  overflow: visible;
   border-color: transparent;
   background: transparent;
   box-shadow: none;
@@ -237,12 +249,17 @@ html, body {
 .throttle-track {
   position: absolute;
   inset-block: 5%;
-  width: 38%;
+  width: 20%;
   border: 1px solid #364d68;
   border-radius: 999px;
-  background: repeating-linear-gradient(to bottom, transparent 0 19%, #31445c 19% 20%), #0b1220;
+  overflow: hidden;
+  box-shadow: inset 3px 3px 8px #000c, 0 1px #ffffff14;
+  background: #080e15;
 }
 .active .throttle-track { border-color: var(--accent-cyan); }
+.throttle-fill { position: absolute; bottom: 0; width: 100%; height: 0%; background: linear-gradient(0deg, #34596d, #91dcf177); }
+.throttle-scale { position: absolute; left: 68%; top: 14%; bottom: 14%; display: flex; flex-direction: column; justify-content: space-between; color: #8795a6; font: 12px Consolas, monospace; }
+.throttle-scale span::before { content: ""; display: inline-block; width: 12px; height: 1px; margin: 0 10px 3px 0; background: #667486; }
 
 .crosshair-h {
   position: absolute;
@@ -259,7 +276,7 @@ html, body {
 .stick-direction {
   position: absolute;
   color: var(--text-muted);
-  font-size: 0.68rem;
+  font-size: 0.875rem;
 }
 .stick-forward { top: 5%; }
 .stick-back { bottom: 5%; }
@@ -267,21 +284,30 @@ html, body {
 .stick-right { right: 5%; }
 
 .stick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
   width: 26%;
   aspect-ratio: 1 / 1;
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 35%, #38bdf8, #0284c7 65%, #0369a1);
-  border: 2px solid #bae6fd;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.65);
+  background: radial-gradient(circle at 35% 20%, #5d6c7c, #35424f 60%, #202c38);
+  border: 1px solid #8797a8;
+  box-shadow: inset 0 2px 2px #ffffff30, inset 0 -3px 5px #0008, 0 7px 12px #0009;
   pointer-events: none;
-  will-change: transform;
+
 }
+
+.stick-knob::after { content: ""; position: absolute; inset: 15%; border: 1px solid #b0c6d81a; border-radius: inherit; }
+#stick-right-knob::before { content: ""; position: absolute; width: 7%; height: 7%; border-radius: 50%; background: #b9edf8; top: 45%; left: 45%; box-shadow: 0 0 8px #91dcf180; }
+.throttle-knob { width: 38%; height: 20%; aspect-ratio: auto; border-radius: 7px; }
+.throttle-knob span { position: absolute; inset: 46% 18%; background: #a4e5f6; box-shadow: 0 0 8px #91dcf166; border-radius: 2px; }
 
 .stick-readout {
   width: 100%;
   display: flex;
   justify-content: space-around;
-  font-size: 0.78rem;
+  font-size: 0.875rem;
   color: var(--text-muted);
   font-variant-numeric: tabular-nums;
 }
@@ -293,11 +319,12 @@ html, body {
   justify-content: space-between;
   padding: 2px 4px;
   color: var(--text-main);
-  font-size: 0.85rem;
-  font-weight: 700;
+  font-size: 1rem;
+  font-weight: 600;
 }
-.stick-heading strong { color: #7dd3fc; }
-.stick-hint { color: var(--text-muted); font-size: 0.68rem; text-align: center; }
+.stick-heading strong { color: #d1eaf3; font-size: 1.8rem; line-height: 1; font-weight: 450; }
+.heading-note { font-size: 0.75rem; color: var(--text-muted); font-weight: 400; }
+.stick-hint { color: var(--text-muted); font-size: 0.75rem; text-align: center; }
 
 .yaw-controls {
   width: 100%;
@@ -306,7 +333,7 @@ html, body {
   align-items: center;
   gap: 6px;
   color: var(--text-muted);
-  font-size: 0.68rem;
+  font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
 }
 .yaw-controls span { text-align: center; }
@@ -316,14 +343,17 @@ html, body {
   padding: 4px;
   border: 1px solid #365879;
   border-radius: 8px;
-  background: var(--bg-panel);
-  color: #bae6fd;
-  font: inherit;
+  background: linear-gradient(#34404e, #222d39);
+  box-shadow: inset 0 1px #ffffff18, 0 3px 6px #0005;
+  color: #d4e6ef;
+  font-family: inherit;
+  font-size: 0.875rem;
   font-weight: 700;
   white-space: nowrap;
   cursor: pointer;
 }
 .btn-yaw.active {
+  box-shadow: inset 0 2px 6px #0008, 0 0 10px #91dcf122;
   border-color: var(--accent-cyan);
   background: #164e63;
   color: #fff;
@@ -337,6 +367,7 @@ html, body {
   justify-content: center;
   align-items: stretch;
   gap: 12px;
+  padding: 12px;
   min-height: 0;
 }
 
@@ -349,10 +380,11 @@ html, body {
 
 .horizon-circle {
   position: relative;
-  width: clamp(70px, 22dvh, 110px);
-  height: clamp(70px, 22dvh, 110px);
+  width: clamp(70px, 23dvh, 150px);
+  height: clamp(70px, 23dvh, 150px);
   border-radius: 50%;
-  border: 2px solid var(--accent-cyan);
+  border: 6px solid #2a3644;
+  box-shadow: 0 1px #8b9cad66, 0 5px 14px #0008, inset 0 0 12px #0009;
   overflow: hidden;
   background: #0f172a;
 }
@@ -362,7 +394,7 @@ html, body {
   left: -50%;
   width: 200%;
   height: 200%;
-  background: linear-gradient(to bottom, #0284c7 0%, #0369a1 50%, #78350f 50%, #451a03 100%);
+  background: linear-gradient(to bottom, #4d7487 0%, #345363 50%, #5e5145 50%, #342e2a 100%);
   transition: transform 0.04s linear;
 }
 .horizon-line {
@@ -375,7 +407,7 @@ html, body {
 .horizon-cross {
   position: absolute;
   inset: 0;
-  border-top: 2px solid rgba(250, 204, 21, 0.85);
+  border-top: 2px solid #c9eff8;
   width: 40px;
   margin: auto;
   height: 0;
@@ -384,11 +416,11 @@ html, body {
 .euler-grid {
   display: flex;
   gap: 10px;
-  font-size: 0.78rem;
+  font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
 }
-.euler-grid div { display: flex; flex-direction: column; align-items: center; }
-.euler-grid .lbl { color: var(--text-muted); font-size: 0.68rem; }
+.euler-grid div { display: flex; flex-direction: column; align-items: center; gap: 3px; min-width: 38px; }
+.euler-grid .lbl { color: var(--text-muted); font-size: 0.75rem; }
 
 .btn-arm {
   position: relative;
@@ -396,9 +428,10 @@ html, body {
   min-height: 56px; /* 拇指友好的大触控目标 */
   padding: 12px 10px;
   border-radius: 10px;
-  border: 1px solid var(--accent-green);
-  background: rgba(16, 185, 129, 0.16);
-  color: #34d399;
+  border: 1px solid #73a7ba;
+  background: linear-gradient(#324c5b, #203440);
+  box-shadow: inset 0 1px #b0e6f433, 0 4px 10px #0005;
+  color: #c0eaf6;
   font-weight: 700;
   font-size: 1rem;
   cursor: pointer;
@@ -444,7 +477,7 @@ html, body {
 .settings-dialog {
   margin: auto;
   padding: 0;
-  width: min(420px, 90vw);
+  width: min(700px, 94vw);
   max-height: 86dvh;
   background: transparent;
   border: none;
@@ -458,7 +491,7 @@ html, body {
 
 .dialog-box {
   background: var(--bg-card);
-  border: 1px solid var(--accent-cyan);
+  border: 1px solid #546677;
   border-radius: 14px;
   overflow: hidden;
   display: flex;
@@ -482,11 +515,11 @@ html, body {
   color: var(--text-main);
 }
 .btn-close {
-  background: rgba(239, 68, 68, 0.16);
-  color: #fca5a5;
-  border: 1px solid rgba(239, 68, 68, 0.5);
+  background: #283340;
+  color: #d9e5ee;
+  border: 1px solid #4b5b6a;
   border-radius: 8px;
-  min-height: 36px;
+  min-height: 44px;
   padding: 6px 14px;
   font-size: 0.82rem;
   font-weight: 700;
@@ -497,19 +530,21 @@ html, body {
 }
 
 .dialog-body {
-  padding: 12px 14px;
+  padding: 16px;
+  min-height: 0;
   overflow-y: auto;
   touch-action: pan-y;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
 }
 
-.more-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.more-row { display: flex; flex-direction: column; gap: 8px; }
 
 .btn-mode {
   flex: 1;
-  min-height: 40px;
+  min-height: 44px;
   padding: 8px 12px;
   border-radius: 8px;
   border: 1px solid var(--border-dim);
@@ -543,9 +578,9 @@ html, body {
   color: var(--text-main);
   border: 1px solid #334155;
   border-radius: 6px;
-  min-height: 36px;
+  min-height: 44px;
   padding: 6px 10px;
-  font-size: 0.74rem;
+  font-size: 0.8125rem;
   cursor: pointer;
 }
 .btn-mini:active { background: #334155; }
@@ -555,7 +590,7 @@ html, body {
   justify-content: space-around;
   gap: 8px;
   flex-wrap: wrap;
-  font-size: 0.76rem;
+  font-size: 0.875rem;
   color: var(--text-muted);
 }
 .diag-row strong { color: var(--text-main); }
@@ -563,7 +598,7 @@ html, body {
 
 .motors-grid {
   display: flex;
-  gap: 12px;
+  gap: 18px;
   justify-content: center;
 }
 .motor-col {
@@ -571,12 +606,12 @@ html, body {
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  font-size: 0.65rem;
+  font-size: 0.75rem;
   color: var(--text-muted);
 }
 .motor-bar-wrap {
-  width: 18px;
-  height: 50px;
+  width: 24px;
+  height: 64px;
   background: var(--bg-panel);
   border: 1px solid var(--border-dim);
   border-radius: 4px;
@@ -599,16 +634,19 @@ html, body {
 }
 
 .sim-toolbar {
+  grid-column: 1 / -1;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
-  font-size: 0.72rem;
+  font-size: 0.8125rem;
   color: var(--accent-cyan);
 }
 
 .alert-banner {
   position: fixed;
   bottom: 12px;
+  max-width: min(90vw, 620px);
+  pointer-events: none;
   left: 50%;
   transform: translateX(-50%);
   background: rgba(239, 68, 68, 0.95);
@@ -641,14 +679,91 @@ html, body {
   .rotate-hint { display: flex; }
 }
 
-/* 矮屏（横屏手机）紧凑化 */
-@media (max-height: 460px) {
-  .hud-topbar { padding: 4px 10px; }
+/* 横屏手机保留完整触控目标，压缩面板间距。 */
+button:focus-visible { outline: 2px solid var(--accent-cyan); outline-offset: 3px; }
+button:disabled { opacity: 0.55; cursor: wait; }
+.connection-detail { font-size: 0.8rem; color: var(--accent-cyan); overflow-wrap: anywhere; }
+.btn-sim-active { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+@media (max-height: 500px) {
+  .cockpit-shell { gap: 6px; }
+  .hud-topbar { padding: 4px 10px; gap: 8px; }
+  .stick-panel { padding: 8px 12px; gap: 4px; border-radius: 12px; }
+  .stick-heading { font-size: 0.85rem; }
+  .stick-heading strong { font-size: 1.4rem; }
+  .center-console { gap: 6px; padding: 4px; }
+  .horizon-wrap { gap: 5px; }
   .btn { padding: 6px 10px; }
-  .btn-kill { padding: 6px 18px; }
+  .btn-arm { min-height: 44px; padding: 8px; font-size: 0.9rem; }
+}
+@media (max-width: 900px) {
+  .conn-sub { max-width: 100px; }
+  .brand-name span { display: none; }
+  .cockpit-main { grid-template-columns: 1fr minmax(132px, 0.62fr) 1fr; gap: 8px; }
+}
+@media (max-width: 740px) {
+  .brand-name { display: none; }
+  .conn-sub { max-width: 80px; font-size: 0.7rem; }
+  .state-pill { padding: 5px 8px; font-size: 0.72rem; }
+  .stick-panel { padding: 6px 8px; }
+  .euler-grid { gap: 4px; font-size: 0.8125rem; }
+  .heading-note, .stick-hint { font-size: 0.75rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .state-failsafe { animation: none; }
+  .horizon-sky-ground, .motor-bar { transition: none; }
 }
 
-@media (max-width: 760px) {
-  .conn-sub { display: none; }
-  .cockpit-main { grid-template-columns: 1fr 0.8fr 1fr; }
+/* 帮助信息紧邻解锁操作，持续显示当前联锁条件。 */
+.arm-hint {
+  color: #a7c1cd;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  text-align: center;
+  text-wrap: balance;
+}
+.arm-hint.warn { color: #fbbf24; }
+.horizon-ladder {
+  position: absolute;
+  left: 43%;
+  top: 35%;
+  width: 14%;
+  height: 30%;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.horizon-ladder i { border-top: 1px solid #ffffff60; }
+.horizon-ladder i:nth-child(2),
+.horizon-ladder i:nth-child(3) { margin-inline: 20%; }
+.dialog-actions { display: flex; align-items: center; gap: 8px; }
+.settings-section {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.settings-section h3, .sim-toolbar h3 {
+  font-size: 0.875rem;
+  color: #d4e4ee;
+  font-weight: 600;
+}
+.sim-toolbar h3 { flex-basis: 100%; }
+.frame-details {
+  padding-top: 10px;
+  border-top: 1px solid var(--border-dim);
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+}
+.frame-details summary { cursor: pointer; padding-block: 8px; }
+#hex-frame-view { display: block; overflow-wrap: anywhere; text-align: left; line-height: 1.8; }
+.motor-col strong { font-weight: 500; font-variant-numeric: tabular-nums; color: #c4e6f0; }
+.gamepad-row { flex-wrap: wrap; }
+.btn-more { min-height: 44px; }
+@media (max-height: 360px) {
+  .arm-hint { font-size: 0.6875rem; line-height: 1.3; }
+  .horizon-circle { width: 66px; height: 66px; }
+}
+@media (max-width: 540px) {
+  .dialog-body { grid-template-columns: minmax(0, 1fr); }
+  .dialog-header { padding-inline: 10px; }
 }

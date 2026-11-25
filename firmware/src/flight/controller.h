@@ -239,6 +239,12 @@ static inline FlightState_t controller_step_dt(FlightController_t *fc,
     bool gyro_valid   = controller_vec3_is_finite(raw_gyro_frd);
     bool accel_valid  = controller_vec3_is_finite(raw_accel_frd);
     bool sample_valid = gyro_valid && accel_valid;
+    float accel_norm_sq = raw_accel_frd.x * raw_accel_frd.x +
+                          raw_accel_frd.y * raw_accel_frd.y +
+                          raw_accel_frd.z * raw_accel_frd.z;
+    bool gravity_valid = accel_valid &&
+                         accel_norm_sq > MAHONY_ACCEL_MIN_G * MAHONY_ACCEL_MIN_G &&
+                         accel_norm_sq < MAHONY_ACCEL_MAX_G * MAHONY_ACCEL_MAX_G;
     if (sample_valid) {
         fc->invalid_imu_samples = 0U;
     } else if (fc->invalid_imu_samples < CTRL_IMU_FAILURE_SAMPLES) {
@@ -261,12 +267,24 @@ static inline FlightState_t controller_step_dt(FlightController_t *fc,
     }
 
     // 【防线 2：如果陀螺仪尚未完成开机静止校准，仅采信有效陀螺帧喂入校准器并禁止解锁】
-    if (!fc->gyro_calibrated) {
-        if (sample_valid) {
-            controller_calibrate_gyro_sample(fc, raw_gyro_frd);
+    bool calibrating = !fc->gyro_calibrated;
+    if (calibrating) {
+        if (gyro_valid && gravity_valid) {
+            if (controller_calibrate_gyro_sample(fc, raw_gyro_frd)) {
+                mahony_align_gravity(&fc->ahrs, raw_accel_frd);
+                for (int i = 0; i < 3; ++i) {
+                    biquad_reset_to(&fc->gyro_lpf[i], 0.0f);
+                }
+            }
         } else {
             controller_reset_gyro_cal(fc);
         }
+    }
+    // Gate arming on the current sample as well as the filtered attitude.
+    // Leave the true command intact in FAILSAFE so a rejected arm cannot reset it.
+    if (fc->safety.state == FLIGHT_STATE_LOCKED &&
+        (calibrating || !sample_valid || !gravity_valid ||
+         raw_accel_frd.z < cosf(SAFETY_MAX_TILT_RAD) * sqrtf(accel_norm_sq))) {
         cmd.armed = false;
     }
 

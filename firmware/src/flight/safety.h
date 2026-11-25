@@ -63,9 +63,10 @@ static inline FlightState_t safety_update(Safety_t *s,
                                           EulerAngle_t attitude,
                                           float vbat,
                                           uint32_t cmd_age_ms) {
-    // 【第一优先级：飞手主动拨回“上锁”开关】
-    // 只要 armed 为 false，无条件回到 LOCKED（这也是解除 FAILSAFE 和 LOWBAT_LAND 锁存的唯一方式）
-    if (!cmd->armed) {
+    // A fresh disarm acknowledges a fault. The BLE disconnect snapshot is stale
+    // and must not be interpreted as a pilot reset.
+    bool comm_lost = cmd_age_ms > SAFETY_TIMEOUT_MS;
+    if (!cmd->armed && (!comm_lost || s->state == FLIGHT_STATE_LOCKED)) {
         s->state           = FLIGHT_STATE_LOCKED;
         s->high_tilt_ticks = 0U;
         cmd->throttle      = 0.0f;
@@ -101,7 +102,6 @@ static inline FlightState_t safety_update(Safety_t *s,
     bool  tilt_enter     = !attitude_valid || (cos_tilt <  cosf(SAFETY_MAX_TILT_RAD));
     bool  tilt_clear     =  attitude_valid && (cos_tilt >= cosf(SAFETY_TILT_RECOVER_OK_RAD));
     bool  tilt_extreme   = !attitude_valid || (cos_tilt <  cosf(SAFETY_EXTREME_TILT_RAD));
-    bool  comm_lost      = (cmd_age_ms > SAFETY_TIMEOUT_MS);
 
     // 【第三优先级：如果当前处于 LOCKED，检查是否满足地面安全解锁的 4 个条件】
     if (s->state == FLIGHT_STATE_LOCKED) {

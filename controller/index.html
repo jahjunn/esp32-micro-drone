@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-  <meta name="theme-color" content="#0b111e" />
+  <meta name="theme-color" content="#0b0f14" />
   <title>UAV-ESP32S3 遥控器</title>
   <link rel="stylesheet" href="/src/style.css" />
 </head>
@@ -12,19 +12,19 @@
     <!-- ==================== 顶栏：连接 / 状态 / 电压 / 急停 ==================== -->
     <header class="hud-topbar">
       <div class="brand-group">
+        <span class="brand-name">UAV <span>/ ESP32</span></span>
         <span class="status-dot" id="conn-dot"></span>
         <div class="conn-sub" id="conn-label">未连接</div>
       </div>
 
-      <div class="state-pill state-locked" id="flight-state-pill">LOCKED (已上锁)</div>
+      <div class="state-pill state-locked" id="flight-state-pill" role="status">已上锁</div>
 
       <div class="metric-box" id="vbat-box" title="1S 电池电压">
         <span class="metric-val" id="vbat-val">--.- V</span>
       </div>
 
       <div class="top-actions">
-        <button id="btn-ble-connect" class="btn btn-primary" type="button">连接 BLE 飞控</button>
-        <button id="btn-sim-toggle" class="btn btn-secondary" type="button">仿真</button>
+        <button id="btn-ble-connect" class="btn btn-primary" type="button">连接蓝牙</button>
         <button id="btn-fullscreen" class="btn btn-secondary" type="button" title="全屏并锁定横屏">全屏</button>
         <button id="btn-kill" class="btn btn-kill" type="button">急停</button>
       </div>
@@ -39,8 +39,9 @@
         </div>
         <div class="stick-surface">
           <div class="stick-zone stick-zone-throttle" id="stick-left-zone">
-            <div class="throttle-track"></div>
-            <div class="stick-knob" id="stick-left-knob"></div>
+            <div class="throttle-track"><div class="throttle-fill" id="throttle-fill"></div></div>
+            <div class="throttle-scale" aria-hidden="true"><span>100</span><span>75</span><span>50</span><span>25</span><span>0</span></div>
+            <div class="stick-knob throttle-knob" id="stick-left-knob"><span></span></div>
           </div>
         </div>
         <p class="stick-hint">上推加油 · 下拉减油 · 松手保持</p>
@@ -52,6 +53,7 @@
           <div class="horizon-circle">
             <div class="horizon-sky-ground" id="horizon-plate">
               <div class="horizon-line"></div>
+              <div class="horizon-ladder" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
             </div>
             <div class="horizon-cross"></div>
           </div>
@@ -62,21 +64,22 @@
           </div>
         </div>
 
-        <button id="btn-arm-toggle" class="btn-arm" type="button">长按 解锁</button>
+        <p id="arm-hint" class="arm-hint" role="status">连接飞控后解锁</p>
+        <button id="btn-arm-toggle" class="btn-arm" type="button" aria-describedby="arm-hint">长按 解锁</button>
 
         <button id="btn-settings" class="btn-more" type="button">状态 / 设置</button>
       </section>
 
       <section class="stick-panel" aria-label="方向">
-        <div class="stick-heading">方向</div>
+        <div class="stick-heading"><span>方向</span><span class="heading-note">松手回中</span></div>
         <div class="stick-surface" id="stick-right-touch">
           <div class="stick-zone" id="stick-right-zone">
             <div class="crosshair-h"></div>
             <div class="crosshair-v"></div>
             <span class="stick-direction stick-forward">前</span>
             <span class="stick-direction stick-back">后</span>
-            <span class="stick-direction stick-left">左</span>
-            <span class="stick-direction stick-right">右</span>
+            <span class="stick-direction stick-left">左移</span>
+            <span class="stick-direction stick-right">右移</span>
             <div class="stick-knob" id="stick-right-knob"></div>
           </div>
         </div>
@@ -85,9 +88,9 @@
           <span>横滚 <strong id="val-roll">0.0°</strong></span>
         </div>
         <div class="yaw-controls" role="group" aria-label="按住转动机头">
-          <button id="yaw-left" class="btn-yaw" type="button" aria-label="按住向左转动机头">↶ 左转</button>
+          <button id="yaw-left" class="btn-yaw" type="button" aria-label="按住向左转动机头">左转</button>
           <span>按住转向 <strong id="val-yaw">0°/s</strong></span>
-          <button id="yaw-right" class="btn-yaw" type="button" aria-label="按住向右转动机头">右转 ↷</button>
+          <button id="yaw-right" class="btn-yaw" type="button" aria-label="按住向右转动机头">右转</button>
         </div>
       </section>
     </main>
@@ -97,11 +100,18 @@
       <div class="dialog-box">
         <header class="dialog-header">
           <h2 id="settings-title" class="dialog-title">状态监测与工具</h2>
-          <button id="btn-settings-close" class="btn-close" type="button">✕ 关闭</button>
+          <div class="dialog-actions">
+            <button id="btn-dialog-kill" class="btn btn-kill" type="button">急停</button>
+            <button id="btn-settings-close" class="btn-close" type="button" autofocus>关闭</button>
+          </div>
         </header>
 
         <div class="dialog-body">
+          <section class="settings-section">
+          <h3>连接与操控</h3>
+          <div class="connection-detail" id="connection-detail">未连接飞控</div>
           <div class="more-row">
+            <button id="btn-sim-toggle" class="btn-mode" type="button">开启离线仿真</button>
             <button id="btn-zero-thr" class="btn-mode" type="button">油门一键归零</button>
           </div>
 
@@ -111,34 +121,41 @@
             <button id="btn-thr-mode" class="btn-mini" type="button" title="Xbox/PS 回中手柄用增量；非回中航模控用直映">油门模式: 增量</button>
           </div>
 
+          </section>
+          <section class="settings-section">
+          <h3>实时遥测</h3>
           <div class="diag-row">
             <span>发包频率 <strong id="tx-hz-val">0 Hz</strong></span>
             <span>控制环耗时 <strong id="loop-us-val">--- us</strong></span>
           </div>
 
           <div class="motors-grid" title="四路电机实时输出">
-            <div class="motor-col"><div class="motor-bar-wrap"><div class="motor-bar" id="m4-bar"></div></div><span>M4 左前</span></div>
-            <div class="motor-col"><div class="motor-bar-wrap"><div class="motor-bar" id="m1-bar"></div></div><span>M1 右前</span></div>
-            <div class="motor-col"><div class="motor-bar-wrap"><div class="motor-bar" id="m3-bar"></div></div><span>M3 左后</span></div>
-            <div class="motor-col"><div class="motor-bar-wrap"><div class="motor-bar" id="m2-bar"></div></div><span>M2 右后</span></div>
+            <div class="motor-col"><div class="motor-bar-wrap"><div class="motor-bar" id="m4-bar"></div></div><strong id="m4-value">—</strong><span>M4 左前</span></div>
+            <div class="motor-col"><div class="motor-bar-wrap"><div class="motor-bar" id="m1-bar"></div></div><strong id="m1-value">—</strong><span>M1 右前</span></div>
+            <div class="motor-col"><div class="motor-bar-wrap"><div class="motor-bar" id="m3-bar"></div></div><strong id="m3-value">—</strong><span>M3 左后</span></div>
+            <div class="motor-col"><div class="motor-bar-wrap"><div class="motor-bar" id="m2-bar"></div></div><strong id="m2-value">—</strong><span>M2 右后</span></div>
           </div>
 
+          <details class="frame-details"><summary>控制帧诊断</summary>
           <code id="hex-frame-view">AA 55 00 00 00 00 00 00 00 00 00 00 00</code>
+          </details>
+          </section>
 
           <!-- 仿真故障注入（仅仿真模式显示） -->
           <div class="sim-toolbar" id="sim-toolbar" style="display: none;">
-            <span>仿真测试：</span>
+            <h3>仿真故障测试</h3>
             <button id="sim-vbat-39" class="btn-mini" type="button">满电</button>
             <button id="sim-vbat-34" class="btn-mini" type="button">低压 3.4V</button>
             <button id="sim-vbat-32" class="btn-mini" type="button">缓降 3.2V</button>
             <button id="sim-gust-tilt" class="btn-mini" type="button">75° 阵风</button>
             <button id="sim-crash-tilt" class="btn-mini" type="button">&gt;110° 倒扣</button>
+            <button id="sim-control-loss" class="btn-mini" type="button">中断控制帧</button>
           </div>
         </div>
       </div>
     </dialog>
 
-    <div id="alert-banner" class="alert-banner" style="display: none;"></div>
+    <div id="alert-banner" role="alert" class="alert-banner" style="display: none;"></div>
 
     <!-- 竖屏提示：遥控必须横屏双拇指操作 -->
     <div class="rotate-hint">请将手机横屏使用<br /><small>左手控制油门，右手控制方向</small></div>

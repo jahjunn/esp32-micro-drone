@@ -24,7 +24,7 @@ import {
   encodeControlFrame,
   decodeTelemetryFrame,
 } from './protocol.ts';
-import { QuadSimulator } from './flight_logic.ts';
+import { QuadSimulator, SAFETY_TIMEOUT_MS } from './flight_logic.ts';
 
 export type ConnectionMode = 'disconnected' | 'connecting' | 'ble-web' | 'ble-native' | 'simulator';
 
@@ -97,6 +97,7 @@ export class UavBleController {
   // 离线飞控仿真器实例与遥测序号
   private sim = new QuadSimulator();
   private simSeq = 0;
+  private simControlLostUntil = 0;
 
   private getInputCallback: () => ControlInputState;
 
@@ -115,6 +116,12 @@ export class UavBleController {
 
   public setSimBatteryVoltage(v: number): void {
     this.sim.vbatV = v;
+  }
+
+  public interruptSimControl(): void {
+    if (this.mode === 'simulator') {
+      this.simControlLostUntil = performance.now() + 1500;
+    }
   }
 
   /**
@@ -168,6 +175,7 @@ export class UavBleController {
   public startSimulator(): void {
     this.disconnect();
     this.sim.reset();
+    this.simControlLostUntil = 0;
     this.setMode('simulator', `${UAV_BLE_DEVICE_NAME} (仿真闭环)`);
     this.start50HzLoop();
   }
@@ -277,12 +285,13 @@ export class UavBleController {
     this.webDevice = device;
 
     device.addEventListener('gattserverdisconnected', () => {
-      if (this.webDevice !== device) return; // 主动断开不触发告警
+      if (epoch !== this.connectionEpoch || this.webDevice !== device) return;
+      this.connectionEpoch++;
       this.webDevice = null;
       this.webCtrlChar = null;
       this.stop50HzLoop();
       this.setMode('disconnected', '连接已断开');
-      this.callbacks.onError('飞控蓝牙连接已断开！飞控将在 500ms 内自动切入 FAILSAFE 锁死。');
+      this.callbacks.onError('飞控蓝牙已断开。若断开前已解锁，飞控会锁存停机。');
     });
 
     const server = await device.gatt.connect();
@@ -300,7 +309,7 @@ export class UavBleController {
       return;
     }
     telemChar.addEventListener('characteristicvaluechanged', (ev: Event) => {
-      if (this.webDevice !== device) return;
+      if (epoch !== this.connectionEpoch || this.webDevice !== device) return;
       const target = ev.target as unknown as WebBleCharacteristic | null;
       if (target && target.value) {
         const parsed = decodeTelemetryFrame(target.value);
@@ -330,11 +339,12 @@ export class UavBleController {
     this.capDeviceId = device.deviceId;
 
     await BleClient.connect(device.deviceId, () => {
-      if (this.capDeviceId !== device.deviceId) return; // 主动断开不触发告警
+      if (epoch !== this.connectionEpoch || this.capDeviceId !== device.deviceId) return;
+      this.connectionEpoch++;
       this.capDeviceId = null;
       this.stop50HzLoop();
       this.setMode('disconnected', '连接已断开');
-      this.callbacks.onError('飞控蓝牙连接已断开！');
+      this.callbacks.onError('飞控蓝牙已断开。若断开前已解锁，飞控会锁存停机。');
     });
     if (epoch !== this.connectionEpoch) {
       if (this.capDeviceId !== device.deviceId) await BleClient.disconnect(device.deviceId);
@@ -353,7 +363,7 @@ export class UavBleController {
       UAV_BLE_SERVICE_UUID,
       UAV_BLE_CHAR_TELEM_UUID,
       (value: DataView) => {
-        if (this.capDeviceId !== device.deviceId) return;
+        if (epoch !== this.connectionEpoch || this.capDeviceId !== device.deviceId) return;
         const parsed = decodeTelemetryFrame(value);
         if (parsed) {
           this.callbacks.onTelemetry(parsed);
@@ -415,6 +425,7 @@ export class UavBleController {
 
     const frameView = new DataView(frame.buffer, frame.byteOffset, frame.byteLength);
 
+    const epoch = this.connectionEpoch;
     this.txInFlight = true;
     try {
       if (this.mode === 'ble-web' && this.webCtrlChar) {
@@ -434,7 +445,7 @@ export class UavBleController {
     } catch {
       // 单帧偶发繁忙忽略，等待下一拍最新数据
     } finally {
-      this.txInFlight = false;
+      if (epoch === this.connectionEpoch) this.txInFlight = false;
     }
   }
 
@@ -442,7 +453,9 @@ export class UavBleController {
    * 安全状态与混控交互仿真，复用协议编解码通道
    */
   private stepSimulator(input: ControlInputState): void {
-    const simRes = this.sim.step(input);
+    const simRes = performance.now() < this.simControlLostUntil
+      ? this.sim.step({ ...input, armed: false, kill: false }, false, SAFETY_TIMEOUT_MS + 1)
+      : this.sim.step(input);
 
     // 打包 19 字节模拟遥测帧并复用真实解码通道验证
     const telemBuf = new Uint8Array(PROTOCOL_TELEM_FRAME_SIZE);

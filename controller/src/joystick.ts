@@ -158,7 +158,7 @@ export class VirtualStick {
 
   private updateFromPointer(e: PointerEvent): void {
     const rect = this.zoneEl.getBoundingClientRect();
-    // 0.35 * 直径 对应摇杆头自身直径(26%)的 ±135% 偏移，实现手机手指与屏幕摇杆头 1:1 像素跟手
+    // 手柄中心行程为面板直径的 35%，指令与视觉使用相同的行程。
     const maxRadius = Math.min(rect.width, rect.height) * 0.35;
     if (maxRadius <= 1e-3) {
       return;
@@ -180,11 +180,8 @@ export class VirtualStick {
   }
 
   private renderKnob(): void {
-    // CSS translate(%) 相对摇杆头自身尺寸(26%)计算，135% × 26% ≈ 35% 父容器半宽
-    const maxOffsetKnobPct = 135;
-    const offsetX = this.normX * maxOffsetKnobPct;
-    const offsetY = this.normY * maxOffsetKnobPct;
-    this.knobEl.style.transform = `translate(${offsetX}%, ${offsetY}%)`;
+    this.knobEl.style.left = `${50 + this.normX * 35}%`;
+    this.knobEl.style.top = `${50 + this.normY * 35}%`;
   }
 }
 
